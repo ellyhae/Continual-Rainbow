@@ -1,0 +1,87 @@
+defaults:
+  - _self_
+  - random: seed1
+  - algorithm: baseline
+#  - override hydra/launcher: joblib
+
+hydra:
+  sweep:
+    dir: hydra_output/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.runtime.choices.algorithm}/${hydra.runtime.choices.random}
+  job:
+    chdir: True
+#  launcher:
+#    n_jobs: 4
+
+name: ${hydra:runtime.choices.algorithm}_${hydra:runtime.choices.random}
+
+seed_name: ${hydra:runtime.choices.random}
+
+env:
+  env_name: gym:Breakout #gym:Asteroids
+  parallel_envs: 64
+  time_limit: 108_000
+  subproc_vecenv: False #True
+  frame_stack: 4
+  frame_skip: 4
+  grayscale: True
+  gamma: 0.99
+  resolution: [84, 84]
+  save_dir: ./videos
+  record_every: 3000
+  decorr: True
+  seed: ${random.seed}
+
+model_dir: ./
+cbp_dir: ./cbp
+cbp_log_freq: 100
+
+algorithm:
+  training_frames: 10_000_000
+
+  tensorboard_log: ${hydra:runtime.cwd}/${hydra:sweep.dir}/tensorboard
+
+  settings:
+    policy: CnnPolicy
+
+    learning_starts: 80_000
+    buffer_size: 1_000_000
+    batch_size: 256
+    target_update_interval: 32_000
+    gradient_steps: 2
+    replay_buffer_kwargs:
+      n_step: 3
+    prioritized_er_beta0_initial: 0.45
+    gamma: 0.99
+    
+    learning_rate: 0.00025
+    loss_fn: 'huber'
+    max_grad_norm: 10
+
+    eps_decay_frames: 500_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
+
+    policy_kwargs:
+      noisy_linear: False
+      linear_kwargs: {}
+      optimizer_kwargs:
+        betas: [0.9, 0.999]
+        eps: null  # will be set in the code
+      features_extractor_kwargs:
+        model_size: 2
+
+eval:
+  # eval during training
+  evalcallback: False
+  eval_freq: 150
+  n_eval_episodes: 10
+  dir: ./eval
+  best_model_dir: ./
+
+wandb:
+  project: Rainbow
+  name: ${name}
+  group: ${hydra:runtime.choices.algorithm}
+  mode: online
+  dir: ${hydra:runtime.cwd}/${hydra:sweep.dir}
+  monitor_gym: False # auto-upload the videos of agents playing the game
+wandb_gradient_save_freq: 1000

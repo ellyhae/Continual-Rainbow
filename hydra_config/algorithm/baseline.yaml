@@ -1,0 +1,5 @@
+policy: MlpPolicy
+
+settings:
+  policy_kwargs:
+    optimizer_class: Adam
