@@ -18,10 +18,10 @@ name: ${hydra:runtime.choices.algorithm}_${hydra:runtime.choices.random}
 seed_name: ${hydra:runtime.choices.random}
 
 env:
-  env_name: gym:Breakout #gym:Asteroids
+  env_name: gym:Asteroids
   parallel_envs: 64
   time_limit: 108_000
-  subproc_vecenv: False #True
+  subproc_vecenv: True
   frame_stack: 4
   frame_skip: 4
   grayscale: True
