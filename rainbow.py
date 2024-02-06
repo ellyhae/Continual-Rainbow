@@ -315,6 +315,7 @@ class Rainbow(AsyncOffPolicyAlgorithm):
         self.logger.record("train/loss", np.mean(losses))
         self.logger.record("train/grad_norm", np.mean(grad_norms))
         self.logger.record("train/q_value", np.mean(qs))
+        self.logger.dump(self.num_timesteps)
 
     def predict(
         self,
