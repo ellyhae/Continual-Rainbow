@@ -29,7 +29,7 @@ env:
   resolution: [84, 84]
   save_dir: ./videos
   record_every: 3000
-  decorr: True
+  decorr: False #True
   seed: ${random.seed}
 
 model_dir: ./
@@ -45,10 +45,10 @@ algorithm:
     policy: CnnPolicy
 
     learning_starts: 80_000
-    buffer_size: 1_000_000
-    batch_size: 256
+    buffer_size: 1_048_576 #2**20
+    batch_size: 64 #256  # reduce batch size to keep b*k/e=8
     target_update_interval: 32_000
-    gradient_steps: 2
+    gradient_steps: 1 #2 # reduce update steps to keep b*k/e=8
     replay_buffer_kwargs:
       n_step: 3
     prioritized_er_beta0_initial: 0.45
