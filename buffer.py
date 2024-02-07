@@ -193,10 +193,15 @@ class PrioritizedReplayBuffer(BaseBuffer):
         self.observations = np.full(self.buffer_size, None)
         self.next_observations = np.full(self.buffer_size, None)
 
-        self.actions = np.zeros((self.buffer_size, self.action_dim), dtype=action_space.dtype)
+        #self.actions = np.zeros((self.buffer_size, self.action_dim), dtype=action_space.dtype)
 
-        self.rewards = np.zeros((self.buffer_size,), dtype=np.float32)
-        self.dones = np.zeros((self.buffer_size,), dtype=np.float32)
+        #self.rewards = np.zeros((self.buffer_size,), dtype=np.float32)
+        #self.dones = np.zeros((self.buffer_size,), dtype=np.float32)
+        
+        self.actions = torch.zeros((self.buffer_size, self.action_dim), dtype=torch.int64, device=self.device)
+        
+        self.rewards = torch.zeros((self.buffer_size,), dtype=torch.float32, device=self.device)
+        self.dones = torch.zeros((self.buffer_size,), dtype=torch.float32, device=self.device)
 
         self.n_step_buffers = [deque(maxlen=self.n_step + 1) for j in range(self.n_envs)]
 
@@ -255,9 +260,9 @@ class PrioritizedReplayBuffer(BaseBuffer):
                 self.observations[self.pos] = o #np.array(o).copy()
                 self.next_observations[self.pos] = no #np.array(no).copy()
 
-                self.actions[self.pos] = np.array(a).copy()
-                self.rewards[self.pos] = np.array(r).copy()
-                self.dones[self.pos] = np.array(d).copy()
+                self.actions[self.pos] = self.to_torch(a) # np.array(a).copy()
+                self.rewards[self.pos] = self.to_torch(r) # np.array(r).copy()
+                self.dones[self.pos] = self.to_torch(d) # np.array(d).copy()
                 
                 self._set_priority_min(self.pos, sqrt(self.max_priority))
                 self._set_priority_sum(self.pos, sqrt(self.max_priority))
@@ -328,11 +333,13 @@ class PrioritizedReplayBuffer(BaseBuffer):
 
     def _get_samples(self, batch_inds: np.ndarray, env: Optional[VecNormalize] = None) -> ReplayBufferSamples:
 
+        stack_lazy = lambda data: torch.stack(list(map(lambda x: torch.from_numpy(x.__array__()), data)))
+        
         data = (
-            prep_observation_for_qnet(self.to_torch(self._normalize_obs(np.stack(self.observations[batch_inds]), env)), self.use_amp),
-            self.to_torch(self.actions[batch_inds, :]),
-            prep_observation_for_qnet(self.to_torch(self._normalize_obs(np.stack(self.next_observations[batch_inds]), env)), self.use_amp),
-            self.to_torch(self.dones[batch_inds].reshape(-1, 1)),
-            self.to_torch(self._normalize_reward(self.rewards[batch_inds].reshape(-1, 1), env)),
+            prep_observation_for_qnet(stack_lazy(self.observations[batch_inds]), self.use_amp),
+            self.actions[batch_inds, :],
+            prep_observation_for_qnet(stack_lazy(self.next_observations[batch_inds]), self.use_amp),
+            self.dones[batch_inds].reshape(-1, 1),
+            self.rewards[batch_inds].reshape(-1, 1),
         )
         return ReplayBufferSamples(*data)
