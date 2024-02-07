@@ -29,7 +29,7 @@ env:
   resolution: [84, 84]
   save_dir: ./videos
   record_every: 3000
-  decorr: False #True
+  decorr: True
   seed: ${random.seed}
 
 model_dir: ./
