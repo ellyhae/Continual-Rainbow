@@ -459,7 +459,9 @@ class DecorrEnvWrapper(gym.Wrapper):
 
         if not self.done:
             for i in range(int(self.decorr_steps)):
-                state, _, _, _ = self.env.step(self.env.action_space.sample())
+                state, _, done, _ = self.env.step(self.env.action_space.sample())
+                if done:
+                    state = self.env.reset()
             self.done = True
         return state
 

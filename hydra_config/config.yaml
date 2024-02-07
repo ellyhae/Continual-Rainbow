@@ -19,7 +19,7 @@ seed_name: ${hydra:runtime.choices.random}
 
 env:
   env_name: gym:Asteroids
-  parallel_envs: 8 #64
+  parallel_envs: 64
   time_limit: 108_000
   subproc_vecenv: True
   frame_stack: 4
@@ -46,9 +46,9 @@ algorithm:
 
     learning_starts: 80_000
     buffer_size: 1_048_576 #2**20
-    batch_size: 64 #256  # reduce batch size to keep b*k/e=8
+    batch_size: 256
     target_update_interval: 32_000
-    gradient_steps: 1 #2 # reduce update steps to keep b*k/e=8
+    gradient_steps: 2
     replay_buffer_kwargs:
       n_step: 3
     prioritized_er_beta0_initial: 0.45
