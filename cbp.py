@@ -11,8 +11,6 @@ def prepare_cbp_kwargs(net, net_args):
 #        'is_training': net.is_training
     }
 
-# TODO: maybe remove in-place operation in jit. This can speed up execution, as in-place operations are not translated/optimized properly
-
 @torch.jit.script
 def _hook_calcs(cbp_vals: Dict[str, torch.Tensor], out: torch.Tensor, eta: float):
     # NOTE Seems CBP is only described for sequential input with gradient updates at each step.
@@ -95,7 +93,7 @@ class CBP(CAdam):
                  activation_layers,      # List[List[Activation]], a list of activation layers for each separate network (policy, value, ...), in the order they are executed. Forward hooks are added to these
                  eta=0.99,               # running average discount factor
                  m=int(5e3),             # maturity threshold, only features with age > m are elligible to be replaced
-                 rho=10**-4,             # replacement rate, controls how frequently features are replaced                                                    # TODO: change description
+                 rho=10**-4,             # replacement rate, controls how frequently features are replaced
                  sample_weights=None,    # functiion, take size and device as input and return a tensor of the given size with newly initialized weights
                  eps=1e-8,               # small additive value to avoid division by zero
                  device = 'auto',
