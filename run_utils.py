@@ -2,7 +2,7 @@ from copy import copy, deepcopy
 
 import wandb
 from wandb.integration.sb3 import WandbCallback
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 
 from omegaconf import OmegaConf
@@ -75,7 +75,7 @@ def initialize_logging(cfg, model):
                  WandbCallback(gradient_save_freq=cfg.wandb_gradient_save_freq)]
     
     if cfg.eval.evalcallback:
-        eval_args = copy(cfg.env)
+        eval_args = deepcopy(cfg.env)
         eval_args.seed += 100   # change seed to avoid data leakage if necessary
         eval_args.decorr = False
         eval_args.parallel_envs = cfg.eval.n_eval_episodes
