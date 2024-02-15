@@ -71,7 +71,7 @@ def initialize_logging(cfg, model):
     
     callbacks = [WeightLogger(),
                  CBPLogger(cfg.cbp_dir, cfg.cbp_log_freq),
-                 CheckpointCallback(save_freq=cfg.checkpoint_freq, save_path=cfg.checkpoint_dir)
+                 CheckpointCallback(save_freq=cfg.checkpoint_freq, save_path=cfg.checkpoint_dir),
                  WandbCallback(gradient_save_freq=cfg.wandb_gradient_save_freq)]
     
     if cfg.eval.evalcallback:
