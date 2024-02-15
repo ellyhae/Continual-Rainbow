@@ -69,10 +69,13 @@ algorithm:
       features_extractor_kwargs:
         model_size: 2
 
+checkpoint_dir: ./checkpoints/
+checkpoint_freq: 15625   # 1_000_000 / 64 (n_envs)
+
 eval:
   # eval during training
-  evalcallback: False
-  eval_freq: 150
+  evalcallback: True
+  eval_freq: 15625   # 1_000_000 / 64 (n_envs)
   n_eval_episodes: 10
   dir: ./eval
   best_model_dir: ./

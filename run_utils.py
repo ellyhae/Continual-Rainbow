@@ -71,11 +71,12 @@ def initialize_logging(cfg, model):
     
     callbacks = [WeightLogger(),
                  CBPLogger(cfg.cbp_dir, cfg.cbp_log_freq),
+                 CheckpointCallback(save_freq=cfg.checkpoint_freq, save_path=cfg.checkpoint_dir)
                  WandbCallback(gradient_save_freq=cfg.wandb_gradient_save_freq)]
     
     if cfg.eval.evalcallback:
         eval_args = copy(cfg.env)
-        eval_args.seed += 1   # change seed to avoid data leakage if necessary
+        eval_args.seed += 100   # change seed to avoid data leakage if necessary
         eval_args.decorr = False
         eval_args.parallel_envs = cfg.eval.n_eval_episodes
         
