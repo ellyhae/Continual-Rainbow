@@ -2,10 +2,9 @@
 
 defaults:
   - _self_
-  #- env: atari
+  - env: control
   - random: seed1
   - algorithm: baseline
-#  - override hydra/launcher: joblib
 
 hydra:
   sweep:
@@ -13,8 +12,6 @@ hydra:
     subdir: ${hydra.runtime.choices.algorithm}/${hydra.runtime.choices.random}
   job:
     chdir: True
-#  launcher:
-#    n_jobs: 4
 
 name: ${hydra:runtime.choices.algorithm}_${hydra:runtime.choices.random}
 
@@ -24,31 +21,38 @@ model_dir: ./
 cbp_dir: ./cbp
 cbp_log_freq: 100
 
-progress_bar: False
+progress_bar: True
+
+env:
+  frame_stack: 4
+  subproc_vecenv: True
+  gamma: 0.99
+  decorr: True
+  seed: ${random.seed}
 
 algorithm:
-  training_frames: 10_000_000
+  training_frames: ???
 
   tensorboard_log: ${hydra:runtime.cwd}/${hydra:sweep.dir}/tensorboard
 
   settings:
-    policy: CnnPolicy
+    learning_starts: ???
+    buffer_size: ???
+    batch_size: ???
+    target_update_interval: ???
 
-    learning_starts: 80_000
-    buffer_size: 1_048_576 #2**20
-    batch_size: 256
-    target_update_interval: 32_000
     gradient_steps: 2
     replay_buffer_kwargs:
       n_step: 3
     prioritized_er_beta0_initial: 0.45
     gamma: 0.99
     
-    learning_rate: 0.00025
+    learning_rate: ???
+
     loss_fn: 'huber'
     max_grad_norm: 10
 
-    eps_decay_frames: 500_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
+    eps_decay_frames: ???
 
     policy_kwargs:
       noisy_linear: False
@@ -58,12 +62,14 @@ algorithm:
         eps: null  # will be set in the code
 
 checkpoint_dir: ./checkpoints/
-checkpoint_freq: 15625   # 1_000_000 / 64 (n_envs)
+checkpoint_freq: ???
 
 eval:
   # eval during training
   evalcallback: True
-  eval_freq: 15625   # 1_000_000 / 64 (n_envs)
+
+  eval_freq: ???
+
   n_eval_episodes: 10
   dir: ./eval
   best_model_dir: ./
@@ -75,4 +81,5 @@ wandb:
   mode: online
   dir: ${hydra:runtime.cwd}/${hydra:sweep.dir}
   monitor_gym: False # auto-upload the videos of agents playing the game
-wandb_gradient_save_freq: 1000
+
+wandb_gradient_save_freq: ???

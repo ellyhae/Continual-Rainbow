@@ -1,6 +1,3 @@
-defaults:
-  - /env@_global_: atari
-
 settings:
   policy_kwargs:
     optimizer_class: Adam
