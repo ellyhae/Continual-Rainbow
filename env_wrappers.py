@@ -19,82 +19,15 @@ from gym import Env
 from gym.wrappers import TimeLimit
 
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.atari_wrappers import (
+    ClipRewardEnv,
+    AtariWrapper,
+)
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
 from vec_envs import DummyVecEnvNoFlatten, LazyVecFrameStack, SubprocVecEnvNoFlatten
 
 cv2.ocl.setUseOpenCL(False)
-
-
-class NoopResetEnv(gym.Wrapper):
-    """Environment wrapper that executes a random number of no-ops upon reset"""
-
-    def __init__(self, env: Env, seed: int, noop_max: int = 30):
-        """Sample initial states by taking random number of no-ops on reset.
-        No-op is assumed to be action 0.
-        """
-        super().__init__(self, env)
-        self.noop_max = noop_max
-        self.override_num_noops = None
-        self.noop_action = 0
-        np.random.seed(seed)
-        assert env.unwrapped.get_action_meanings()[0] == "NOOP"
-
-    def reset(self, *args, **kwargs) -> Any:
-        """Do no-op action for a number of steps in [1, noop_max]."""
-        self.env.reset(**kwargs)
-        if self.override_num_noops is not None:
-            noops = self.override_num_noops
-        else:
-            noops = self.unwrapped.np_random.randint(1, self.noop_max + 1)  # pylint: disable=E1101
-        assert noops > 0
-        obs = None
-        for _ in range(noops):
-            obs, _, done, _ = self.env.step(self.noop_action)
-            if done:
-                obs = self.env.reset(*args, **kwargs)
-        return obs
-
-
-class EpisodicLifeEnv(gym.Wrapper):
-    """In some environments the agent has a number of lives, and each death simply reduces the number of lives and resets the environment.
-    This wrapper turns a loss of life into the end of an episode, while actually letting the death sequence reset the environment internally.
-    """
-
-    def __init__(self, env: Env):
-        """Make end-of-life == end-of-episode, but only reset on true game over.
-        Done by DeepMind for the DQN and co. since it helps value estimation.
-        """
-        super().__init__(self, env)
-        self.lives = 0
-        self.was_real_done = True
-
-    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
-        obs, reward, done, info = self.env.step(action)
-        self.was_real_done = done
-        # check current lives, make loss of life terminal,
-        # then update lives to handle bonus lives
-        lives = self.env.unwrapped.ale.lives()
-        if self.lives > lives > 0:
-            # for Qbert sometimes we stay in lives == 0 condition for a few frames
-            # so it's important to keep lives > 0, so that we only reset once
-            # the environment advertises done.
-            done = True
-        self.lives = lives
-        return obs, reward, done, info
-
-    def reset(self, *args, **kwargs) -> Any:
-        """Reset only when lives are exhausted.
-        This way all states are still reachable even though lives are episodic,
-        and the learner need not know about any of this behind-the-scenes.
-        """
-        if self.was_real_done:
-            obs = self.env.reset(*args, **kwargs)
-        else:
-            # no-op step to advance from terminal/lost life state
-            obs, _, _, _ = self.env.step(0)
-        self.lives = self.env.unwrapped.ale.lives()
-        return obs
 
 
 class RetroEpisodicLifeEnv(gym.Wrapper):
@@ -148,44 +81,6 @@ class RetroEpisodicLifeEnv(gym.Wrapper):
             obs, _, _, info = self.env.step(0)
             self.lives = info["lives"]
         return obs
-
-
-class MaxAndSkipEnv(gym.Wrapper):
-    """
-    Frame skipping wrapper that max-pools consecutive frames.
-    """
-
-    def __init__(self, env: Env, skip: int = 4):
-        """Return only every `skip`-th frame"""
-        super().__init__(self, env)
-        # most recent raw observations (for max pooling across time steps)
-        self._obs_buffer = np.zeros((2,) + env.observation_space.shape, dtype=np.uint8)
-        self._skip = skip
-
-    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
-        """Repeat action, sum reward, and max over last observations."""
-        total_reward = 0.0
-        actual_rewards = []
-        done = None
-        for i in range(self._skip):
-            obs, reward, done, info = self.env.step(action)
-            if i == self._skip - 2:
-                self._obs_buffer[0] = obs
-            if i == self._skip - 1:
-                self._obs_buffer[1] = obs
-            total_reward += reward
-            actual_rewards.append(reward)
-            if done:
-                break
-        # Note that the observation on the done=True frame
-        # doesn't matter
-        max_frame = self._obs_buffer.max(axis=0)
-
-        info["actual_rewards"] = actual_rewards
-        return max_frame, total_reward, done, info
-
-    def reset(self, *args, **kwargs) -> Any:
-        return self.env.reset(*args, **kwargs)
 
 
 class SkipFrameEnv(gym.Wrapper):
@@ -264,15 +159,10 @@ class StochasticFrameSkip(gym.Wrapper):
         self.rng.seed(s)
 
 
-class ClipRewardEnv(gym.RewardWrapper):
-    """Instead of the actual return use the sign of the return"""
-
-    def reward(self, reward: float) -> float:
-        return np.sign(reward).astype(np.float32)
-
-
 class WarpFrame(gym.ObservationWrapper):
-    """Re-scale frame observation and possibly convert to grayscale"""
+    """Re-scale frame observation and possibly convert to grayscale
+
+    Very similar to stable baseline's WarpFrame, but with some additional features"""
 
     def __init__(
         self,
@@ -393,32 +283,19 @@ def create_atari_env(
     env = gym.make(config.env_name.removeprefix("atari:") + "NoFrameskip-v4")
     env = TimeLimit(env, config.time_limit)
 
-    # removed RecorderWrapper
+    # this has to be applied before the EpisodicLifeEnv (in the AtariWrapper) wrapper, as
+    # the termination at the end of a life would otherwise mess with the monitoring results
+    env = Monitor(env, allow_early_resets=True)
 
-    env = NoopResetEnv(env, instance_seed, noop_max=30)
-    env = MaxAndSkipEnv(env, skip=config.frame_skip)
-
-    env = Monitor(
-        env, allow_early_resets=True
-    )  # this has to be applied before the EpisodicLifeEnv wrapper!
-
-    # NOTE: it's unclear whether using the EpisodicLifeEnv and FireResetEnv wrappers yield any benefits
-    # see https://github.com/openai/baselines/issues/240#issuecomment-391165056
-    # and https://github.com/astooke/rlpyt/pull/158#issuecomment-632859702
-    env = EpisodicLifeEnv(env)
-    # if 'FIRE' in env.unwrapped.get_action_meanings():
-    #    env = FireResetEnv(env)
-
-    env = ClipRewardEnv(env)
-
-    env = WarpFrame(
+    assert config.resolution[0] == config.resolution[1]
+    env = AtariWrapper(
         env,
-        width=config.resolution[1],
-        height=config.resolution[0],
-        grayscale=config.grayscale,
+        noop_max=30,
+        frame_skip=config.frame_skip,
+        screen_size=config.resolution[0],
+        terminal_on_life_loss=True,
+        clip_reward=True,
     )
-
-    # removed RecorderWrapper
 
     if decorr_steps is not None:
         env = DecorrEnvWrapper(env, decorr_steps)
@@ -561,6 +438,8 @@ def create_env_instance(
 
 def create_env(args: SimpleNamespace, decorr_steps: int | None = None) -> VecEnv:
     """Create a vectorized environment of the specified type, with args.parallel_envs environments as specified
+
+    similar to stable baselines' make_vec_env, but with the instance/rank of each environment as an additional argument
 
     Args:
         args (SimpleNamespace): Configuration Namespace. Needs to include everything needed to instantiate an environment,
