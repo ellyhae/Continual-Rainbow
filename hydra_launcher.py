@@ -30,7 +30,8 @@ def run_experiment(cfg: DictConfig) -> None:
 
     env = set_up_env(cfg.env)
     model = initialize_model(cfg.algorithm, env)
-    run, callbacks = initialize_logging(cfg, model)
+    run, logger, callbacks = initialize_logging(cfg)
+    model.set_logger(logger)
 
     model.learn(
         cfg.algorithm.training_frames,

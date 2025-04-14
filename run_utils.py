@@ -1,7 +1,3 @@
-# TODO add docstrings
-# TODO add comments
-# TODO consider moving away from DictConfig
-
 import random
 from copy import deepcopy
 from typing import Tuple, List
@@ -10,7 +6,7 @@ from omegaconf import OmegaConf, DictConfig
 from tqdm.auto import trange
 
 import wandb
-import wandb.wandb_run
+from wandb.wandb_run import Run
 from wandb.integration.sb3 import WandbCallback
 
 from stable_baselines3.common.callbacks import (
@@ -22,6 +18,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.utils import configure_logger
+from stable_baselines3.common.logger import Logger
 
 from wandb_format import WandbOutputFormat
 from rainbow import Rainbow
@@ -52,58 +49,81 @@ def get_mean_ep_length(args: DictConfig) -> float:
 
     # Decorrelate envs
     ep_lengths = []
-    for frame in trange(args.time_limit // 4 + 100):
+    for _ in trange(args.time_limit // 4 + 100):
         _, _, _, infos = dc_env.step(
-            [dc_env.action_space.sample() for x in range(dc_args.parallel_envs)]
+            [dc_env.action_space.sample() for _ in range(dc_args.parallel_envs)]
         )
-        for info, j in zip(infos, range(dc_args.parallel_envs)):
+        for info, _ in zip(infos, range(dc_args.parallel_envs)):
             if "episode" in info.keys():
                 ep_lengths.append(info["episode"]["l"])
     dc_env.close()
+
     mean_length = sum(ep_lengths) / len(ep_lengths)
     return mean_length
 
 
 def set_up_env(cfg: DictConfig) -> VecEnv:
     """Instatiates the specified environment"""
+
     decorr_steps = None
     if cfg.decorr and not cfg.env_name.startswith("procgen:"):
         decorr_steps = get_mean_ep_length(cfg) // cfg.parallel_envs
+
     env = create_env(cfg, decorr_steps=decorr_steps)
 
     return env
 
 
 def initialize_model(cfg: DictConfig, env: VecEnv) -> Rainbow:
+    """Instantiates the specified Rainbow Algorithm"""
+
     cfg = OmegaConf.to_container(cfg, resolve=True)
+
+    # Using omegaconf open_dict and copy we could work directly on a DictConfig
+    # and therefore remove the string label notation.
+    # However, DictConfig only allows simple types, meaning the optimizer class could not be stored directly
+    # This is an issue, as it is part of a a dictionary parameter passed to Rainbow, and therefore
+    # a bit unwieldy to pass separately
+
+    # calculate the exploration_fraction parameter
     if "eps_decay_frames" in cfg["settings"]:
         cfg["settings"]["exploration_fraction"] = cfg["settings"].pop(
             "eps_decay_frames"
         ) / (cfg["training_frames"] + env.num_envs)
+
+    # choose the appropriate optimizer class
     if isinstance(cfg["settings"]["policy_kwargs"]["optimizer_class"], str):
         cfg["settings"]["policy_kwargs"]["optimizer_class"] = (
             Adam
             if cfg["settings"]["policy_kwargs"]["optimizer_class"] == "Adam"
             else CBP
         )
+
     return Rainbow(env=env, **cfg["settings"])
 
 
 def initialize_logging(
-    cfg: DictConfig, model: BaseAlgorithm
-) -> Tuple[wandb.wandb_run.Run, List[BaseCallback]]:
+    cfg: DictConfig,
+) -> Tuple[Run, Logger, List[BaseCallback]]:
+    """Initializes Weights and Biases logger as well as logging, checkpointing and evaluation callbacks
+
+    Args:
+        cfg (DictConfig): Configuration
+
+    Returns:
+        Tuple[Run, Logger, List[BaseCallback]]
+    """
+    BaseAlgorithm.set_logger
     run = wandb.init(
         config=OmegaConf.to_container(cfg, resolve=True), reinit=True, **cfg.wandb
     )
 
-    model.set_logger(
-        configure_logger(
-            0,
-            cfg.algorithm.tensorboard_log,
-            cfg.name,
-            True,
-            extra_formats=[WandbOutputFormat],
-        )
+    logger = configure_logger(
+        0,
+        cfg.algorithm.tensorboard_log,
+        cfg.name,
+        True,
+        extra_formats=[WandbOutputFormat],
     )
 
     callbacks = [
@@ -130,22 +150,28 @@ def initialize_logging(
             )
         )
 
-    return run, callbacks
+    return run, logger, callbacks
 
 
 @torch.no_grad()
-def save_evaluation(cfg: DictConfig, model: BaseAlgorithm):
-    cfg.random.seed += (
-        2 * cfg.env.parallel_envs
-    )  # change seed for evaluation to avoid train-test contamination
-    cfg.env.decorr = False
-    cfg.env.parallel_envs = min(cfg.eval.n_eval_episodes, cfg.env.parallel_envs)
+def save_evaluation(cfg: DictConfig, model: BaseAlgorithm) -> None:
+    """Evaluate the given model and store the results in final_evaluation.npy"""
+
+    eval_args = deepcopy(cfg)
+
+    # change seed for evaluation to avoid train-test contamination
+    eval_args.random.seed += 2 * eval_args.env.parallel_envs
+
+    eval_args.env.decorr = False
+    eval_args.env.parallel_envs = min(
+        eval_args.eval.n_eval_episodes, eval_args.env.parallel_envs
+    )
     model.policy.eval()
 
-    env = set_up_env(cfg.env)
+    env = set_up_env(eval_args.env)
 
     res = evaluate_policy(
-        model, env, cfg.eval.n_eval_episodes, return_episode_rewards=True
+        model, env, eval_args.eval.n_eval_episodes, return_episode_rewards=True
     )
 
     env.close()
