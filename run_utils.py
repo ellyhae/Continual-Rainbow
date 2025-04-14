@@ -21,8 +21,9 @@ from stable_baselines3.common.callbacks import (
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
+from stable_baselines3.common.utils import configure_logger
 
-from sb3_logger import configure_logger, WandbOutputFormat
+from wandb_format import WandbOutputFormat
 from rainbow import Rainbow
 from env_wrappers import create_env
 from logging_callbacks import CBPLogger, WeightLogger
