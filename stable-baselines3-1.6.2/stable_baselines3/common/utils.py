@@ -178,9 +178,12 @@ def configure_logger(
     tensorboard_log: Optional[str] = None,
     tb_log_name: str = "",
     reset_num_timesteps: bool = True,
+    extra_formats=[],
 ) -> Logger:
     """
     Configure the logger's outputs.
+
+    Adapted original implementation to allow for custom logger formats
 
     :param verbose: Verbosity level: 0 for no output, 1 for the standard output to be part of the logger outputs
     :param tensorboard_log: the log location for tensorboard (if None, no logging)
@@ -188,6 +191,7 @@ def configure_logger(
     :param reset_num_timesteps:  Whether the ``num_timesteps`` attribute is reset or not.
         It allows to continue a previous learning curve (``reset_num_timesteps=False``)
         or start from t=0 (``reset_num_timesteps=True``, the default).
+    :param extra_formats: list of KVWriter subclasses, which will be instantiated with log_dir and log_suffix parameters
     :return: The logger object
     """
     save_path, format_strings = None, ["stdout"]
@@ -207,7 +211,7 @@ def configure_logger(
             format_strings = ["tensorboard"]
     elif verbose == 0:
         format_strings = [""]
-    return configure(save_path, format_strings=format_strings)
+    return configure(save_path, format_strings=format_strings, extra_formats=extra_formats)
 
 
 def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, action_space: gym.spaces.Space) -> None:

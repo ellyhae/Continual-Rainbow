@@ -624,14 +624,21 @@ class Logger:
                 _format.write_sequence(map(str, args))
 
 
-def configure(folder: Optional[str] = None, format_strings: Optional[List[str]] = None) -> Logger:
+def configure(
+    folder: Optional[str] = None, 
+    format_strings: Optional[List[str]] = None, 
+    extra_formats: List[KVWriter] = []
+) -> Logger:
     """
     Configure the current logger.
+
+    Adapted original implementation to allow for custom logger formats
 
     :param folder: the save location
         (if None, $SB3_LOGDIR, if still None, tempdir/SB3-[date & time])
     :param format_strings: the output logging format
         (if None, $SB3_LOG_FORMAT, if still None, ['stdout', 'log', 'csv'])
+    :param extra_formats: list of KVWriter subclasses, which will be instantiated with log_dir and log_suffix parameters
     :return: The logger object.
     """
     if folder is None:
@@ -647,6 +654,9 @@ def configure(folder: Optional[str] = None, format_strings: Optional[List[str]] 
 
     format_strings = list(filter(None, format_strings))
     output_formats = [make_output_format(f, folder, log_suffix) for f in format_strings]
+
+    # add custom KVWriters
+    output_formats += [_format(folder, log_suffix) for _format in extra_formats]
 
     logger = Logger(folder=folder, output_formats=output_formats)
     # Only print when some files will be saved
