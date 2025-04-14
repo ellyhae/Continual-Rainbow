@@ -1,11 +1,4 @@
-# TODO investigate vactorized action noise
-# TODO add docstrings
-# TODO add comments
-
-from typing import Optional, Tuple, TypeVar
-
-from gym import spaces
-import numpy as np
+from typing import Optional, TypeVar
 
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.type_aliases import (
@@ -16,7 +9,7 @@ from stable_baselines3.common.type_aliases import (
 )
 from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.noise import ActionNoise
+from stable_baselines3.common.noise import ActionNoise, VectorizedActionNoise
 from stable_baselines3.common.buffers import ReplayBuffer
 
 SelfAsyncOffPolicyAlgorithm = TypeVar(
@@ -25,6 +18,8 @@ SelfAsyncOffPolicyAlgorithm = TypeVar(
 
 
 class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
+    """Off policy algorithm baseclass which makes use of SubprocVecEnv to do environment steps and model optimization in parallel"""
+
     def learn(
         self: SelfAsyncOffPolicyAlgorithm,
         total_timesteps: int,
@@ -38,6 +33,28 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
     ) -> SelfAsyncOffPolicyAlgorithm:
+        """
+        Return a trained model.
+
+        Based on OffPolicyAlgorithm.learn, with the difference that collect_rollouts has
+        been split into async_collect_rollouts and await_collect_rollouts
+
+        :param total_timesteps: The total number of samples (env steps) to train on
+        :param callback: callback(s) called at every step with state of the algorithm.
+        :param log_interval: The number of timesteps before logging.
+        :param tb_log_name: the name of the run for TensorBoard logging
+        :param eval_env: Environment that will be used to evaluate the agent. Caution, this parameter
+            is deprecated and will be removed in the future. Please use ``EvalCallback`` instead.
+        :param eval_freq: Evaluate the agent every ``eval_freq`` timesteps (this may vary a little).
+            Caution, this parameter is deprecated and will be removed in the future.
+            Please use `EvalCallback` or a custom Callback instead.
+        :param n_eval_episodes: Number of episode to evaluate the agent
+        :param eval_log_path: Path to a folder where the evaluations will be saved
+        :param reset_num_timesteps: whether or not to reset the current timestep number (used in logging)
+        :param progress_bar: Display a progress bar using tqdm and rich.
+        :return: the trained model
+        """
+
         total_timesteps, callback = self._setup_learn(
             total_timesteps,
             eval_env,
@@ -53,13 +70,11 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
         callback.on_training_start(locals(), globals())
 
         assert self.train_freq.frequency == 1, "Should always collect one step."
-        assert (
-            self.train_freq.unit == TrainFrequencyUnit.STEP
-        ), "Should always collect one step."
+        assert self.train_freq.unit == TrainFrequencyUnit.STEP, (
+            "Should always collect one step."
+        )
 
-        while (
-            self.num_timesteps <= total_timesteps
-        ):  #  + self.env.num_envs  adjust limit as the last set of experiences is not used for training
+        while self.num_timesteps <= total_timesteps:
             buffer_actions = self.async_collect_rollouts(
                 self.env,
                 action_noise=self.action_noise,
@@ -132,9 +147,9 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
 
         callback.on_rollout_start()
 
-        # if self.use_sde and self.sde_sample_freq > 0:
-        #    # Sample a new noise matrix
-        #    self.actor.reset_noise(env.num_envs)
+        if self.use_sde and self.sde_sample_freq > 0:
+            # Sample a new noise matrix
+            self.actor.reset_noise(env.num_envs)
 
         # Select action randomly or according to policy
         actions, buffer_actions = self._sample_action(
@@ -145,49 +160,6 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
         env.step_async(actions)
 
         return buffer_actions
-
-    def _sample_action(
-        self,
-        learning_starts: int,
-        action_noise: Optional[ActionNoise] = None,
-        n_envs: int = 1,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Modified to assume exploration rate schedule, and therefore use the model in warmup
-
-        Sample an action according to the exploration policy.
-        This is either done by sampling the probability distribution of the policy,
-        or sampling a random action (from a uniform distribution over the action space)
-        or by adding noise to the deterministic output.
-
-        :param action_noise: Action noise that will be used for exploration
-            Required for deterministic policy (e.g. TD3). This can also be used
-            in addition to the stochastic policy for SAC.
-        :param learning_starts: Number of steps before learning for the warm-up phase.
-        :param n_envs:
-        :return: action to take in the environment
-            and scaled action that will be stored in the replay buffer.
-            The two differs when the action space is not normalized (bounds are not [-1, 1]).
-        """
-        # Select action according to policy
-        unscaled_action, _ = self.predict(self._last_obs, deterministic=False)
-
-        # Rescale the action from [low, high] to [-1, 1]
-        if isinstance(self.action_space, spaces.Box):
-            scaled_action = self.policy.scale_action(unscaled_action)
-
-            # Add noise to the action (improve exploration)
-            if action_noise is not None:
-                scaled_action = np.clip(scaled_action + action_noise(), -1, 1)
-
-            # We store the scaled action in the buffer
-            buffer_action = scaled_action
-            action = self.policy.unscale_action(scaled_action)
-        else:
-            # Discrete case, no need to normalize or clip
-            buffer_action = unscaled_action
-            action = buffer_action
-        return action, buffer_action
 
     def await_collect_rollouts(
         self,

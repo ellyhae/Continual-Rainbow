@@ -16,7 +16,7 @@ from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedul
 from stable_baselines3.common.utils import get_linear_fn
 from stable_baselines3.common.callbacks import BaseCallback
 
-from async_algo import AsyncOffPolicyAlgorithm
+from async_algorithm import AsyncOffPolicyAlgorithm
 from policies import CnnPolicy, RainbowPolicy, MlpPolicy, RainbowNetwork
 from torch_layers import FactorizedNoisyLinear
 from buffer import PrioritizedReplayBuffer
