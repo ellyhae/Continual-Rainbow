@@ -549,7 +549,9 @@ def create_env_instance(
     else:
         # if no env type is specified, assume that no processing is needed
         env = gym.make(args.env_name)
-        env = Monitor(env, allow_early_resets=True)
+        env = Monitor(env)
+        if decorr_steps is not None:
+            env = DecorrEnvWrapper(env, decorr_steps)
     if not args.env_name.startswith("procgen:"):
         env.seed(instance_seed)
         env.action_space.seed(instance_seed)
