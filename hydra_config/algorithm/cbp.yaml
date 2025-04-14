@@ -1,4 +1,5 @@
-policy: CPPO_Policy
+defaults:
+  - /env@_global_: atari
 
 settings:
   policy_kwargs:

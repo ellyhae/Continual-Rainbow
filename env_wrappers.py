@@ -1,105 +1,47 @@
 """
+This file is a slightly modified version of https://github.com/schmidtdominik/Rainbow/blob/298c93d3d9322440d3a22cf24045b57af9c83fde/common/env_wrappers.py
+Specifically, stable baselines related code has been added and additional type annotations and documentation have been inserted
+
+Note from original file:
 Here all environment wrappers are defined and environments are created and configured.
 Some of these wrappers are based on https://github.com/openai/baselines/blob/ea25b9e8b234e6ee1bca43083f8f3cf974143998/baselines/common/atari_wrappers.py
 """
 
-import time
 from functools import partial
-from copy import deepcopy
+from types import SimpleNamespace
+from typing import Any, Tuple, Dict
 
-import cv2 #, imageio
-import gym #, retro
-#from retro.examples.discretizer import Discretizer
+import cv2
 import numpy as np
-from tqdm.auto import trange
+
+import gym
+from gym import Env
+from gym.wrappers import TimeLimit
 
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
-#import common.retro_utils as retro_utils
-from vec_envs import SubprocVecEnvNoFlatten, DummyVecEnvNoFlatten, LazyVecFrameStack
+from vec_envs import DummyVecEnvNoFlatten, LazyVecFrameStack, SubprocVecEnvNoFlatten
 
 cv2.ocl.setUseOpenCL(False)
 
-EMULATOR_REC_SCALE = 2
-PREPROC_REC_SCALE = 4
-BASE_FPS_ATARI = 100
-BASE_FPS_PROCGEN = 22
-
-#class RecordEpisodeStatistics(gym.Wrapper):
-#    """
-#    Wrapper that records episode statistics.
-#    """
-#    def __init__(self, env, gamma):
-#        super(RecordEpisodeStatistics, self).__init__(env)
-#        self.t0 = time.time()
-#        self.episode_return = 0.0
-#        self.episode_length = 0
-#        self.episode_discounted_return = 0.0
-#        self.gamma = gamma
-#
-#    def reset(self, **kwargs):
-#        observation = super(RecordEpisodeStatistics, self).reset(**kwargs)
-#        self.episode_return = 0.0
-#        self.episode_length = 0
-#        self.episode_discounted_return = 0.0
-#        return observation
-#
-#    def step(self, action):
-#        observation, reward, done, info = super(RecordEpisodeStatistics, self).step(action)
-#        self.episode_return += reward
-#        self.episode_discounted_return += reward * self.gamma**self.episode_length
-#        self.episode_length += 1
-#        if done:
-#            info['episode_metrics'] = {'return': self.episode_return,
-#                                       'length': self.episode_length,
-#                                       'time': round(time.time() - self.t0, 6),
-#                                       'discounted_return': self.episode_discounted_return}
-#
-#            self.episode_return = 0.0
-#            self.episode_length = 0
-#            self.t0 = time.time()
-#        return observation, reward, done, info
-
-
-class TimeLimit(gym.Wrapper):
-    """Time limit wrapper from
-    https://github.com/openai/baselines/blob/ea25b9e8b234e6ee1bca43083f8f3cf974143998/baselines/common/wrappers.py
-    (this one is slightly different from the one in gym.wrappers)
-    """
-
-    def __init__(self, env, max_episode_steps=None):
-        super(TimeLimit, self).__init__(env)
-        self._max_episode_steps = max_episode_steps
-        self._elapsed_steps = 0
-
-    def step(self, ac):
-        observation, reward, done, info = self.env.step(ac)
-        self._elapsed_steps += 1
-        if self._elapsed_steps >= self._max_episode_steps:
-            done = True
-            info['TimeLimit.truncated'] = True
-            #print('Truncated episode due to time limit!')
-        return observation, reward, done, info
-
-    def reset(self, **kwargs):
-        self._elapsed_steps = 0
-        return self.env.reset(**kwargs)
-
 
 class NoopResetEnv(gym.Wrapper):
-    def __init__(self, env, seed, noop_max=30):
+    """Environment wrapper that executes a random number of no-ops upon reset"""
+
+    def __init__(self, env: Env, seed: int, noop_max: int = 30):
         """Sample initial states by taking random number of no-ops on reset.
         No-op is assumed to be action 0.
         """
-        gym.Wrapper.__init__(self, env)
+        super().__init__(self, env)
         self.noop_max = noop_max
         self.override_num_noops = None
         self.noop_action = 0
         np.random.seed(seed)
-        assert env.unwrapped.get_action_meanings()[0] == 'NOOP'
+        assert env.unwrapped.get_action_meanings()[0] == "NOOP"
 
-    def reset(self, **kwargs):
-        """ Do no-op action for a number of steps in [1, noop_max]."""
+    def reset(self, *args, **kwargs) -> Any:
+        """Do no-op action for a number of steps in [1, noop_max]."""
         self.env.reset(**kwargs)
         if self.override_num_noops is not None:
             noops = self.override_num_noops
@@ -110,23 +52,24 @@ class NoopResetEnv(gym.Wrapper):
         for _ in range(noops):
             obs, _, done, _ = self.env.step(self.noop_action)
             if done:
-                obs = self.env.reset(**kwargs)
+                obs = self.env.reset(*args, **kwargs)
         return obs
-
-    def step(self, ac):
-        return self.env.step(ac)
 
 
 class EpisodicLifeEnv(gym.Wrapper):
-    def __init__(self, env):
+    """In some environments the agent has a number of lives, and each death simply reduces the number of lives and resets the environment.
+    This wrapper turns a loss of life into the end of an episode, while actually letting the death sequence reset the environment internally.
+    """
+
+    def __init__(self, env: Env):
         """Make end-of-life == end-of-episode, but only reset on true game over.
         Done by DeepMind for the DQN and co. since it helps value estimation.
         """
-        gym.Wrapper.__init__(self, env)
+        super().__init__(self, env)
         self.lives = 0
         self.was_real_done = True
 
-    def step(self, action):
+    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
         obs, reward, done, info = self.env.step(action)
         self.was_real_done = done
         # check current lives, make loss of life terminal,
@@ -140,13 +83,13 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.lives = lives
         return obs, reward, done, info
 
-    def reset(self, **kwargs):
+    def reset(self, *args, **kwargs) -> Any:
         """Reset only when lives are exhausted.
         This way all states are still reachable even though lives are episodic,
         and the learner need not know about any of this behind-the-scenes.
         """
         if self.was_real_done:
-            obs = self.env.reset(**kwargs)
+            obs = self.env.reset(*args, **kwargs)
         else:
             # no-op step to advance from terminal/lost life state
             obs, _, _, _ = self.env.step(0)
@@ -159,28 +102,29 @@ class RetroEpisodicLifeEnv(gym.Wrapper):
     Like the EpisodicLifeEnv above but for retro environments.
     This wrapper tries to detect whether the environment provides life information and is only active if it does.
     """
-    def __init__(self, env):
+
+    def __init__(self, env: Env):
         """Make end-of-life == end-of-episode, but only reset on true game over.
         Done by DeepMind for the DQN and co. since it helps value estimation.
         """
-        gym.Wrapper.__init__(self, env)
+        super().__init__(self, env)
         self.lives = 0
         self.was_real_done = True
         self.enabled = True
 
-    def step(self, action):
+    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
         obs, reward, done, info = self.env.step(action)
         if not self.enabled:
             return obs, reward, done, info
 
-        if self.enabled and not 'lives' in info:
+        if self.enabled and "lives" not in info:
             self.enabled = False
             return obs, reward, done, info
 
         self.was_real_done = done
         # check current lives, make loss of life terminal,
         # then update lives to handle bonus lives
-        lives = info['lives']
+        lives = info["lives"]
         if self.lives > lives > 0:
             # for Qbert sometimes we stay in lives == 0 condition for a few frames
             # so it's important to keep lives > 0, so that we only reset once
@@ -189,20 +133,20 @@ class RetroEpisodicLifeEnv(gym.Wrapper):
         self.lives = lives
         return obs, reward, done, info
 
-    def reset(self, **kwargs):
+    def reset(self, *args, **kwargs) -> Any:
         """Reset only when lives are exhausted.
         This way all states are still reachable even though lives are episodic,
         and the learner need not know about any of this behind-the-scenes.
         """
         if not self.enabled:
-            return self.env.reset(**kwargs)
+            return self.env.reset(*args, **kwargs)
 
         if self.was_real_done:
-            obs = self.env.reset(**kwargs)
+            obs = self.env.reset(*args, **kwargs)
         else:
             # no-op step to advance from terminal/lost life state
             obs, _, _, info = self.env.step(0)
-            self.lives = info['lives']
+            self.lives = info["lives"]
         return obs
 
 
@@ -210,22 +154,25 @@ class MaxAndSkipEnv(gym.Wrapper):
     """
     Frame skipping wrapper that max-pools consecutive frames.
     """
-    def __init__(self, env, skip=4):
+
+    def __init__(self, env: Env, skip: int = 4):
         """Return only every `skip`-th frame"""
-        gym.Wrapper.__init__(self, env)
+        super().__init__(self, env)
         # most recent raw observations (for max pooling across time steps)
         self._obs_buffer = np.zeros((2,) + env.observation_space.shape, dtype=np.uint8)
         self._skip = skip
 
-    def step(self, action):
+    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
         """Repeat action, sum reward, and max over last observations."""
         total_reward = 0.0
         actual_rewards = []
         done = None
         for i in range(self._skip):
             obs, reward, done, info = self.env.step(action)
-            if i == self._skip - 2: self._obs_buffer[0] = obs
-            if i == self._skip - 1: self._obs_buffer[1] = obs
+            if i == self._skip - 2:
+                self._obs_buffer[0] = obs
+            if i == self._skip - 1:
+                self._obs_buffer[1] = obs
             total_reward += reward
             actual_rewards.append(reward)
             if done:
@@ -234,20 +181,22 @@ class MaxAndSkipEnv(gym.Wrapper):
         # doesn't matter
         max_frame = self._obs_buffer.max(axis=0)
 
-        info['actual_rewards'] = actual_rewards
+        info["actual_rewards"] = actual_rewards
         return max_frame, total_reward, done, info
 
-    def reset(self, **kwargs):
-        return self.env.reset(**kwargs)
+    def reset(self, *args, **kwargs) -> Any:
+        return self.env.reset(*args, **kwargs)
 
 
 class SkipFrameEnv(gym.Wrapper):
-    def __init__(self, env, skip):
+    """Return only every `skip`-th frame without maxing consecutive frames"""
+
+    def __init__(self, env: Env, skip: int):
         """Return only every `skip`-th frame without maxing consecutive frames"""
         super().__init__(env)
         self._skip = skip
 
-    def step(self, action):
+    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
         """Repeat action, and sum reward"""
         total_reward = 0.0
         actual_rewards = []
@@ -260,7 +209,7 @@ class SkipFrameEnv(gym.Wrapper):
             actual_rewards.append(reward)
             if done:
                 break
-        info['actual_rewards'] = actual_rewards
+        info["actual_rewards"] = actual_rewards
         return obs, total_reward, done, info
 
 
@@ -268,114 +217,72 @@ class StochasticFrameSkip(gym.Wrapper):
     """
     Stochastic frame skipping wrapper, often used with gym-retro.
     """
-    def __init__(self, env, n, stickprob, seed):
-        print(stickprob)
-        gym.Wrapper.__init__(self, env)
-        self.n = n
+
+    def __init__(self, env: Env, num_substeps: int, stickprob: float, seed: int):
+        super().__init__(self, env)
+        self.num_substeps = num_substeps
         self.stickprob = stickprob
-        self.curac = None
+        self.current_action = None
         self.rng = np.random.RandomState(seed)
         self.supports_want_render = hasattr(env, "supports_want_render")
 
-    def reset(self, **kwargs):
-        self.curac = None
-        return self.env.reset(**kwargs)
+    def reset(self, *args, **kwargs) -> Any:
+        self.current_action = None
+        return self.env.reset(*args, **kwargs)
 
-    def step(self, ac):
+    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
         done = False
-        totrew = 0
+        total_reward = 0
         actual_rewards = []
-        for i in range(self.n):
+        for i in range(self.num_substeps):
             # First step after reset, use action
-            if self.curac is None:
-                self.curac = ac
+            if self.current_action is None:
+                self.current_action = action
             # First substep, delay with probability=stickprob
             elif i == 0:
                 if self.rng.random() > self.stickprob:
-                    self.curac = ac
+                    self.current_action = action
             # Second substep, new action definitely kicks in
             elif i == 1:
-                self.curac = ac
-            if self.supports_want_render and i < self.n - 1:
-                ob, rew, done, info = self.env.step(self.curac, want_render=False)
+                self.current_action = action
+            if self.supports_want_render and i < self.num_substeps - 1:
+                obs, reward, done, info = self.env.step(
+                    self.current_action, want_render=False
+                )
             else:
-                ob, rew, done, info = self.env.step(self.curac)
-            totrew += rew
-            actual_rewards.append(rew)
+                obs, reward, done, info = self.env.step(self.current_action)
+            total_reward += reward
+            actual_rewards.append(reward)
 
-            if done: break
+            if done:
+                break
 
-        info['actual_rewards'] = actual_rewards
-        return ob, totrew, done, info
+        info["actual_rewards"] = actual_rewards
+        return obs, total_reward, done, info
 
-    def seed(self, s):
+    def seed(self, s) -> None:
         self.rng.seed(s)
 
 
-class ClipRewardEnv(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
+class ClipRewardEnv(gym.RewardWrapper):
+    """Instead of the actual return use the sign of the return"""
 
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        return obs, np.sign(reward).astype(np.float32), done, info
-
-
-class RecorderWrapper(gym.Wrapper):
-    """ Env wrapper that records the game as an .mp4 """
-
-    def __init__(self, env, fps, save_dir, label, record_every):
-        super().__init__(env)
-        self.record_every = record_every
-        self.save_dir = save_dir
-        self.label = label
-        assert self.label in ('emulator', 'preproc')
-        self.fps = fps
-        self.recordings = 0
-        self.writer = None
-        self.frames_written = 0
-
-        self.last_recording = 0
-
-        self.scale_factor = None
-
-    def step(self, action):
-        observation, rew, done, info = self.env.step(action)
-        
-        return observation, rew, done, info                                                           #### !!!!!!!! CHANGED !!!!!!!! #####
-
-        if done and self.is_recording:
-            self.writer.close()
-            self.writer = None
-            self.frames_written = 0
-            self.last_recording = time.time()
-            info[self.label + '_recording'] = self.save_dir + f'/{self.label}_{self.recordings}.mp4'
-            self.recordings += 1
-
-        if time.time() - self.last_recording > self.record_every and not self.is_recording and done:
-            self.frames_written = 0
-            self.writer = imageio.get_writer(self.save_dir + f'/{self.label}_{self.recordings}.mp4', fps=self.fps, macro_block_size=1)
-            self.last_recording = time.time()
-
-        if self.writer is not None and self.frames_written < (60 * 60 * 16 if self.label == 'preproc' else 60 * 60 * 9):
-            if self.scale_factor is None:
-                self.scale_factor = EMULATOR_REC_SCALE if self.label == 'emulator' else PREPROC_REC_SCALE
-                if observation.shape[0] <= 64 and observation.shape[1] <= 64:
-                    self.scale_factor *= 2
-
-            rec_observation = cv2.resize(observation, (observation.shape[1] * self.scale_factor, observation.shape[0] * self.scale_factor),
-                                         interpolation=cv2.INTER_NEAREST)
-            self.frames_written += 1
-            self.writer.append_data(rec_observation.squeeze())
-        return observation, rew, done, info
-
-    @property
-    def is_recording(self):
-        return self.writer is not None
+    def reward(self, reward: float) -> float:
+        return np.sign(reward).astype(np.float32)
 
 
 class WarpFrame(gym.ObservationWrapper):
-    def __init__(self, env, width, height, grayscale=True, interp=cv2.INTER_AREA, dict_space_key=None):
+    """Re-scale frame observation and possibly convert to grayscale"""
+
+    def __init__(
+        self,
+        env: Env,
+        width: int,
+        height: int,
+        grayscale: bool = True,
+        interp=cv2.INTER_AREA,
+        dict_space_key=None,
+    ):
         """
         Warp frames to 84x84 as done in the Nature paper and later work.
         If the environment uses dictionary observations, `dict_space_key` can be specified which indicates which
@@ -406,7 +313,7 @@ class WarpFrame(gym.ObservationWrapper):
             self.observation_space.spaces[self._key] = new_space
         assert original_space.dtype == np.uint8 and len(original_space.shape) == 3
 
-    def observation(self, obs):
+    def observation(self, obs: Any) -> Any:
         if self._key is None:
             frame = obs
         else:
@@ -415,7 +322,9 @@ class WarpFrame(gym.ObservationWrapper):
         if self._grayscale:
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         if frame.shape[0] != self._height or frame.shape[1] != self._width:  # ds maybe
-            frame = cv2.resize(frame, (self._width, self._height), interpolation=self.interp)
+            frame = cv2.resize(
+                frame, (self._width, self._height), interpolation=self.interp
+            )
         if self._grayscale:
             frame = np.expand_dims(frame, -1)
 
@@ -431,55 +340,67 @@ class RandomizeStateOnReset(gym.Wrapper):
     """
     Wrapper for retro environments which loads a random new retro state (in games that provide multiple levels/modes) after each episode.
     """
-    def __init__(self, env, seed):
+
+    def __init__(self, env: Env, seed: int):
         super().__init__(env)
+
+        import retro_utils
+
         self.init_states = retro_utils.get_init_states()[self.env.gamename]
         print(self.init_states)
         self.rng = np.random.RandomState(seed)
         if self.init_states:
-            self.unwrapped.load_state(self.init_states[self.rng.randint(0, len(self.init_states))])
+            self.unwrapped.load_state(
+                self.init_states[self.rng.randint(0, len(self.init_states))]
+            )
 
-    def reset(self, *args, **kwargs):
+    def reset(self, *args, **kwargs) -> Any:
         if len(self.init_states) > 1:
             next_state = self.init_states[self.rng.randint(0, len(self.init_states))]
-            print(f'Loading state {next_state}')
+            print(f"Loading state {next_state}")
             self.unwrapped.load_state(next_state)
         return self.env.reset(*args, **kwargs)
 
 
 class DecorrEnvWrapper(gym.Wrapper):
+    """When executing several environments in parallel (VecEnv), they (usually) all start at the same state, leading their
+    episodes to be correlated with each other, which can be detrimental to the learning process.
 
-    def __init__(self, env, decorr_steps):
+    This wrapper takes some number decorr_steps random actions when the environment is first reset, after which it becomes inactive."""
+
+    def __init__(self, env: Env, decorr_steps: int):
         super().__init__(env)
         self.decorr_steps = decorr_steps
         self.done = False
 
-    def reset(self):
-        state = self.env.reset()
+    def reset(self, *args, **kwargs) -> Any:
+        """If this is the first reset of the environment then perform decorr_steps random actions, then turn inactive"""
+        state = self.env.reset(*args, **kwargs)
 
         if not self.done:
             for i in range(int(self.decorr_steps)):
                 state, _, done, _ = self.env.step(self.env.action_space.sample())
                 if done:
-                    state = self.env.reset()
+                    state = self.env.reset(*args, **kwargs)
             self.done = True
         return state
 
 
-def create_atari_env(config, instance_seed, instance, decorr_steps):
-    """ Creates a gym atari environment and wraps it for DeepMind-style Atari """
-
-    env = gym.make(config.env_name[4:] + 'NoFrameskip-v4')
-    
+def create_atari_env(
+    config: SimpleNamespace, instance_seed: int, instance: int, decorr_steps: int | None
+) -> Env:
+    """Creates a gym atari environment and wraps it for DeepMind-style Atari"""
+    env = gym.make(config.env_name.removeprefix("atari:") + "NoFrameskip-v4")
     env = TimeLimit(env, config.time_limit)
 
-    if instance == 0:
-        env = RecorderWrapper(env, fps=BASE_FPS_ATARI, save_dir=config.save_dir, label='emulator', record_every=config.record_every)
+    # removed RecorderWrapper
 
     env = NoopResetEnv(env, instance_seed, noop_max=30)
     env = MaxAndSkipEnv(env, skip=config.frame_skip)
 
-    env = Monitor(env, allow_early_resets=True)  # this has to be applied before the EpisodicLifeEnv wrapper!
+    env = Monitor(
+        env, allow_early_resets=True
+    )  # this has to be applied before the EpisodicLifeEnv wrapper!
 
     # NOTE: it's unclear whether using the EpisodicLifeEnv and FireResetEnv wrappers yield any benefits
     # see https://github.com/openai/baselines/issues/240#issuecomment-391165056
@@ -490,60 +411,97 @@ def create_atari_env(config, instance_seed, instance, decorr_steps):
 
     env = ClipRewardEnv(env)
 
-    env = WarpFrame(env, width=config.resolution[1], height=config.resolution[0], grayscale=config.grayscale)
+    env = WarpFrame(
+        env,
+        width=config.resolution[1],
+        height=config.resolution[0],
+        grayscale=config.grayscale,
+    )
 
-    if instance == 0:
-        env = RecorderWrapper(env, fps=BASE_FPS_ATARI // config.frame_skip, save_dir=config.save_dir, label='preproc', record_every=config.record_every)
+    # removed RecorderWrapper
 
     if decorr_steps is not None:
         env = DecorrEnvWrapper(env, decorr_steps)
 
     return env
 
-def create_retro_env(config, instance_seed, instance, decorr_steps):
-    """ Creates a retro environment and applies recommended wrappers. """
+
+def create_retro_env(
+    config: SimpleNamespace, instance_seed: int, instance: int, decorr_steps: int | None
+) -> Env:
+    """Creates a retro environment and applies recommended wrappers."""
+
+    # import retro only when needed, therefore making an optional package that does not need to be installed
+    import retro
+    from retro.examples.discretizer import Discretizer
+
     use_restricted_actions = retro.Actions.FILTERED
-    if config.retro_action_patch == 'discrete':
+    if config.retro_action_patch == "discrete":
         use_restricted_actions = retro.Actions.DISCRETE
 
     randomize_state_on_reset = False
-    retro_state = retro.State.DEFAULT if (config.retro_state in ['default', 'randomized']) else config.retro_state
-    if config.retro_state == 'randomized': randomize_state_on_reset = True
-    env = retro.make(config.env_name[6:], state=retro_state, use_restricted_actions=use_restricted_actions)
-    if randomize_state_on_reset:  # note: this might mess with any EpisodicLifeEnv-like wrappers!
+    retro_state = (
+        retro.State.DEFAULT
+        if (config.retro_state in ["default", "randomized"])
+        else config.retro_state
+    )
+    if config.retro_state == "randomized":
+        randomize_state_on_reset = True
+    env = retro.make(
+        config.env_name.removeprefix("retro:"),
+        state=retro_state,
+        use_restricted_actions=use_restricted_actions,
+    )
+    if (
+        randomize_state_on_reset
+    ):  # note: this might mess with any EpisodicLifeEnv-like wrappers!
         env = RandomizeStateOnReset(env, instance_seed)
-    if config.retro_action_patch == 'single_buttons':
-        env = Discretizer(env, [[x] for x in env.unwrapped.buttons if x not in ('SELECT', 'START')])
+    if config.retro_action_patch == "single_buttons":
+        env = Discretizer(
+            env, [[x] for x in env.unwrapped.buttons if x not in ("SELECT", "START")]
+        )
 
-    if instance == 0:
-        env = RecorderWrapper(env, fps=BASE_FPS_ATARI, save_dir=config.save_dir, label='emulator', record_every=config.record_every)
+    # removed RecorderWrapper
 
     env = TimeLimit(env, max_episode_steps=config.time_limit)
     if config.frame_skip > 1:
-        env = StochasticFrameSkip(env, seed=instance_seed, n=config.frame_skip, stickprob=config.retro_stickyprob)
+        env = StochasticFrameSkip(
+            env,
+            seed=instance_seed,
+            num_substeps=config.frame_skip,
+            stickprob=config.retro_stickyprob,
+        )
     env = Monitor(env, allow_early_resets=True)
     env = RetroEpisodicLifeEnv(env)
     env = ClipRewardEnv(env)
-    env = WarpFrame(env, width=config.resolution[1], height=config.resolution[0], grayscale=config.grayscale)
+    env = WarpFrame(
+        env,
+        width=config.resolution[1],
+        height=config.resolution[0],
+        grayscale=config.grayscale,
+    )
 
-    if instance == 0:
-        env = RecorderWrapper(env, fps=BASE_FPS_ATARI // config.frame_skip, save_dir=config.save_dir, label='preproc', record_every=config.record_every)
+    # removed RecorderWrapper
 
     if decorr_steps is not None:
         env = DecorrEnvWrapper(env, decorr_steps)
     return env
 
-def create_procgen_env(config, instance_seed, instance):
-    """ Creates a procgen environment and applies recommended wrappers. """
-    procgen_args = {k[8:]: v for k, v in vars(config).items() if k.startswith('procgen_')}
-    procgen_args['start_level'] += 300_000*instance
-    env = gym.make(f'procgen:procgen-{config.env_name.lower()[8:]}-v0', **procgen_args)
 
-    if instance == 0:
-        env = RecorderWrapper(env, fps=BASE_FPS_PROCGEN, save_dir=config.save_dir, label='emulator', record_every=config.record_every)
+def create_procgen_env(
+    config: SimpleNamespace, instance_seed: int, instance: int
+) -> Env:
+    """Creates a procgen environment and applies recommended wrappers."""
+    procgen_args = {
+        k[8:]: v for k, v in vars(config).items() if k.startswith("procgen_")
+    }
+    procgen_args["start_level"] += 300_000 * instance
+    env = gym.make(f"procgen:procgen-{config.env_name.lower()[8:]}-v0", **procgen_args)
+
+    # removed RecorderWrapper
 
     if config.frame_skip > 1:
-        print('Frame skipping for procgen enabled!')
+        print("Frame skipping for procgen enabled!")
         env = SkipFrameEnv(env, config.frame_skip)
 
     env = Monitor(env, allow_early_resets=True)
@@ -551,29 +509,74 @@ def create_procgen_env(config, instance_seed, instance):
     # Note: openai doesn't use reward clipping for procgen with ppo & rainbow (https://arxiv.org/pdf/1912.01588.pdf)
     # env = ClipRewardEnv(env)
 
-    env = WarpFrame(env, width=config.resolution[1], height=config.resolution[0], grayscale=config.grayscale)
+    env = WarpFrame(
+        env,
+        width=config.resolution[1],
+        height=config.resolution[0],
+        grayscale=config.grayscale,
+    )
 
-    if instance == 0:
-        env = RecorderWrapper(env, fps=BASE_FPS_PROCGEN // config.frame_skip, save_dir=config.save_dir, label='preproc', record_every=config.record_every)
+    # removed RecorderWrapper
+
     return env
 
-def create_env_instance(args, instance, decorr_steps):
-    instance_seed = args.seed+instance
-    decorr_steps = None if decorr_steps is None else decorr_steps*instance
 
-    if args.env_name.startswith('retro:'): env = create_retro_env(args, instance_seed, instance, decorr_steps)
-    elif args.env_name.startswith('gym:'): env = create_atari_env(args, instance_seed, instance, decorr_steps)
-    elif args.env_name.startswith('procgen:'): env = create_procgen_env(args, instance_seed, instance)
-    else: raise RuntimeError('Environment id needs to start with "gym:", "retro:" or "procgen:".')
-    if not args.env_name.startswith('procgen:'):
+def create_env_instance(
+    args: SimpleNamespace, instance: int, decorr_steps: int | None
+) -> Env:
+    """Create a single instance of the specified environment
+
+    The prefixes 'retro:', 'atari:' and 'procgen:' can be used to apply the corresponding preprocessing wrappers.
+    If no prefix is present, then the environment is directly loaded from gym and only the Monitor wrapper is applied
+
+    Args:
+        args (SimpleNamespace): Configuration parameters
+        instance (int): used in conjunction with args.seed to create a custom seed for each environment
+        decorr_steps (int | None): take some number decorr_steps random actions in the environment upon the first reset, to decorrelate parallel environments
+
+    Returns:
+        Env: The specified environment with all necessary wrappers applied
+    """
+    instance_seed = args.seed + instance
+    decorr_steps = None if decorr_steps is None else decorr_steps * instance
+
+    if args.env_name.startswith("retro:"):
+        env = create_retro_env(args, instance_seed, instance, decorr_steps)
+    elif args.env_name.startswith("atari:"):
+        env = create_atari_env(args, instance_seed, instance, decorr_steps)
+    elif args.env_name.startswith("procgen:"):
+        env = create_procgen_env(args, instance_seed, instance)
+    else:
+        # if no env type is specified, assume that no processing is needed
+        env = gym.make(args.env_name)
+        env = Monitor(env, allow_early_resets=True)
+    if not args.env_name.startswith("procgen:"):
         env.seed(instance_seed)
         env.action_space.seed(instance_seed)
         env.observation_space.seed(instance_seed)
     return env
 
-def create_env(args, decorr_steps=None):
-    env_fns = [partial(create_env_instance, args=args, instance=i, decorr_steps=decorr_steps) for i in range(args.parallel_envs)]
-    vec_env = partial(SubprocVecEnvNoFlatten) if args.subproc_vecenv else DummyVecEnvNoFlatten
+
+def create_env(args: SimpleNamespace, decorr_steps: int | None = None) -> VecEnv:
+    """Create a vectorized environment of the specified type, with args.parallel_envs environments as specified
+
+    Args:
+        args (SimpleNamespace): Configuration Namespace. Needs to include everything needed to instantiate an environment,
+                                as well as the number of parallel_envs, the flag subproc_vecenv to switch between
+                                SubprocVecEnvNoFlatten (true) and DummyVecEnvNoFlatten (false), as well as
+                                frame_stack, the number of frames used for frame stacking
+        decorr_steps (int | None, optional): _description_. Defaults to None.
+
+    Returns:
+        VecEnv: The specified VecEnv
+    """
+    env_fns = [
+        partial(create_env_instance, args=args, instance=i, decorr_steps=decorr_steps)
+        for i in range(args.parallel_envs)
+    ]
+    vec_env = SubprocVecEnvNoFlatten if args.subproc_vecenv else DummyVecEnvNoFlatten
     env = vec_env(env_fns)
-    env = LazyVecFrameStack(env, args.frame_stack, args.parallel_envs, clone_arrays=not args.subproc_vecenv, lz4_compress=False)
+    env = LazyVecFrameStack(
+        env, args.frame_stack, clone_arrays=not args.subproc_vecenv, lz4_compress=False
+    )
     return env

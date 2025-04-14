@@ -1,29 +1,24 @@
+# TODO add/fix docstrings
+# TODO add comments
+
 from typing import Any, Dict, List, Optional, Type
 
-import torch as torch
-from gym import spaces
-from torch import nn
 import numpy as np
+import torch as torch
+from torch import nn
+from gym import spaces
 
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.torch_layers import (
     BaseFeaturesExtractor,
-    CombinedExtractor,
     FlattenExtractor,
-    #NatureCNN,
-    #create_mlp,
 )
 from stable_baselines3.common.type_aliases import Schedule
 
-from torch_layers import (
-    ImpalaCNNLarge,
-    create_mlp,
-    Dueling
-)
-
-from utils import prep_observation_for_qnet
-
+from torch_layers import ImpalaCNNLarge, create_mlp, Dueling
+from logging_callbacks import prep_observation_for_qnet
 from cbp import CBP, prepare_cbp_kwargs
+
 
 class RainbowNetwork(BasePolicy):
     """
@@ -48,7 +43,7 @@ class RainbowNetwork(BasePolicy):
         activation_fn: Type[nn.Module] = nn.ReLU,
         normalize_images: bool = True,
         noisy_linear: bool = True,
-        linear_kwargs: Dict[str, Any] = {'sigma_0': 0.5}
+        linear_kwargs: Dict[str, Any] = {"sigma_0": 0.5},
     ) -> None:
         super().__init__(
             observation_space,
@@ -72,8 +67,26 @@ class RainbowNetwork(BasePolicy):
         self.noisy_linear = noisy_linear
         self.linear_kwargs = linear_kwargs
         self.dueling = Dueling(
-            nn.Sequential(*create_mlp(self.features_dim, 1, self.net_arch, self.activation_fn, self.noisy_linear, self.linear_kwargs)),
-            nn.Sequential(*create_mlp(self.features_dim, action_dim, self.net_arch, self.activation_fn, self.noisy_linear, self.linear_kwargs))
+            nn.Sequential(
+                *create_mlp(
+                    self.features_dim,
+                    1,
+                    self.net_arch,
+                    self.activation_fn,
+                    self.noisy_linear,
+                    self.linear_kwargs,
+                )
+            ),
+            nn.Sequential(
+                *create_mlp(
+                    self.features_dim,
+                    action_dim,
+                    self.net_arch,
+                    self.activation_fn,
+                    self.noisy_linear,
+                    self.linear_kwargs,
+                )
+            ),
         )
 
     def forward(self, obs: torch.Tensor, advantages_only: bool = False) -> torch.Tensor:
@@ -84,7 +97,9 @@ class RainbowNetwork(BasePolicy):
         """
         return self.dueling(self.extract_features(obs), advantages_only=advantages_only)
 
-    def _predict(self, observation: torch.Tensor, deterministic: bool = True) -> torch.Tensor:
+    def _predict(
+        self, observation: torch.Tensor, deterministic: bool = True
+    ) -> torch.Tensor:
         q_values = self(observation, advantages_only=True)
         # Greedy action
         action = q_values.argmax(dim=1).reshape(-1)
@@ -100,16 +115,10 @@ class RainbowNetwork(BasePolicy):
                 activation_fn=self.activation_fn,
                 features_extractor=self.features_extractor,
                 noisy_linear=self.noisy_linear,
-                linear_kwargs=self.linear_kwargs
+                linear_kwargs=self.linear_kwargs,
             )
         )
         return data
-    
-    #def set_training_mode(self, mode: bool) -> None:
-    #    self.training_ = mode
-    #
-    #def is_training(self) -> bool:
-    #    return self.training_
 
 
 class RainbowPolicy(BasePolicy):
@@ -145,10 +154,10 @@ class RainbowPolicy(BasePolicy):
         features_extractor_kwargs: Optional[Dict[str, Any]] = None,
         normalize_images: bool = True,
         noisy_linear: bool = True,
-        linear_kwargs: Dict[str, Any] = {'sigma_0': 0.5},
+        linear_kwargs: Dict[str, Any] = {"sigma_0": 0.5},
         optimizer_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
-        use_amp: bool = True
+        use_amp: bool = True,
     ) -> None:
         super().__init__(
             observation_space,
@@ -181,7 +190,7 @@ class RainbowPolicy(BasePolicy):
             "noisy_linear": self.noisy_linear,
             "linear_kwargs": linear_kwargs,
         }
-        
+
         self.use_amp = use_amp
 
         self._build(lr_schedule)
@@ -197,15 +206,17 @@ class RainbowPolicy(BasePolicy):
         self.q_net = self.make_net()
         self.q_net_target = self.make_net()
         self.q_net_target.load_state_dict(self.q_net.state_dict())
-        
+
         # Cant set the target's training mode to false, as this affects the results of spectral norm and causes the results to differ from the reference implementation
         self.q_net_target.set_training_mode(False)
 
         if self.optimizer_class == CBP:
-            optimizer_kwargs = self.optimizer_kwargs | prepare_cbp_kwargs(self.q_net, self.net_args)
+            optimizer_kwargs = self.optimizer_kwargs | prepare_cbp_kwargs(
+                self.q_net, self.net_args
+            )
         else:
             optimizer_kwargs = self.optimizer_kwargs
-        
+
         # Setup optimizer with initial learning rate
         self.optimizer = self.optimizer_class(  # type: ignore[call-arg]
             self.q_net.parameters(),
@@ -215,7 +226,9 @@ class RainbowPolicy(BasePolicy):
 
     def make_net(self) -> RainbowNetwork:
         # Make sure we always have separate networks for features extractors etc
-        net_args = self._update_features_extractor(self.net_args, features_extractor=None)
+        net_args = self._update_features_extractor(
+            self.net_args, features_extractor=None
+        )
         return RainbowNetwork(**net_args).to(self.device)
 
     def forward(self, obs: torch.Tensor, deterministic: bool = True) -> torch.Tensor:
@@ -239,7 +252,7 @@ class RainbowPolicy(BasePolicy):
             )
         )
         return data
-    
+
     def obs_to_tensor(self, observation):
         """
         Overwrites default obs_to_tensor function.
@@ -247,19 +260,10 @@ class RainbowPolicy(BasePolicy):
         Adds frame stacking support
         """
         if isinstance(observation, list):
-            return prep_observation_for_qnet(torch.from_numpy(np.stack(observation)), self.use_amp), True
+            return prep_observation_for_qnet(
+                torch.from_numpy(np.stack(observation)), self.use_amp
+            ), True
         return super().obs_to_tensor(observation)
-
-    #def set_training_mode(self, mode: bool) -> None:
-    #    """
-    #    As the reference implementation does not distinguish between train and eval modes, neither will we
-    #    
-    #    Put the policy in either training or evaluation mode.
-    #    This affects certain modules, such as batch normalisation and dropout.
-    #    :param mode: if true, set to training mode, else set to evaluation mode
-    #    """
-    #    self.q_net.set_training_mode(mode)
-    #    #self.training = mode
 
 
 MlpPolicy = RainbowPolicy
@@ -293,7 +297,7 @@ class CnnPolicy(RainbowPolicy):
         features_extractor_kwargs: Optional[Dict[str, Any]] = None,
         normalize_images: bool = True,
         noisy_linear: bool = True,
-        linear_kwargs: Dict[str, Any] = {'sigma_0': 0.5},
+        linear_kwargs: Dict[str, Any] = {"sigma_0": 0.5},
         optimizer_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:

@@ -154,5 +154,4 @@ cython_debug/
 # Hydra output file
 hydra_output
 runs
-old_rainbow
 final_output

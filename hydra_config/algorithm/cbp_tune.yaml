@@ -1,0 +1,11 @@
+policy: CPPO_Policy
+
+env:
+  env_name: gym:Cartpole
+
+settings:
+  policy_kwargs:
+    optimizer_class: CBP
+    optimizer_kwargs:
+      rho: 1e-5
+      m: 1000

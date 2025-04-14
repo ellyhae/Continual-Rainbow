@@ -1,5 +1,8 @@
+#TODO specify the Hydra config setup and all individual parameters
+
 defaults:
   - _self_
+  #- env: atari
   - random: seed1
   - algorithm: baseline
 #  - override hydra/launcher: joblib
@@ -17,24 +20,11 @@ name: ${hydra:runtime.choices.algorithm}_${hydra:runtime.choices.random}
 
 seed_name: ${hydra:runtime.choices.random}
 
-env:
-  env_name: gym:Asteroids
-  parallel_envs: 64
-  time_limit: 108_000
-  subproc_vecenv: True
-  frame_stack: 4
-  frame_skip: 4
-  grayscale: True
-  gamma: 0.99
-  resolution: [84, 84]
-  save_dir: ./videos
-  record_every: 3000
-  decorr: True
-  seed: ${random.seed}
-
 model_dir: ./
 cbp_dir: ./cbp
 cbp_log_freq: 100
+
+progress_bar: False
 
 algorithm:
   training_frames: 10_000_000
@@ -66,8 +56,6 @@ algorithm:
       optimizer_kwargs:
         betas: [0.9, 0.999]
         eps: null  # will be set in the code
-      features_extractor_kwargs:
-        model_size: 2
 
 checkpoint_dir: ./checkpoints/
 checkpoint_freq: 15625   # 1_000_000 / 64 (n_envs)

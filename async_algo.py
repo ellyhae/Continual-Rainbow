@@ -1,16 +1,28 @@
+# TODO investigate vactorized action noise
+# TODO add docstrings
+# TODO add comments
+
 from typing import Optional, Tuple, TypeVar
 
 from gym import spaces
 import numpy as np
 
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
-from stable_baselines3.common.type_aliases import MaybeCallback, TrainFreq, RolloutReturn, GymEnv, TrainFrequencyUnit
+from stable_baselines3.common.type_aliases import (
+    MaybeCallback,
+    RolloutReturn,
+    GymEnv,
+    TrainFrequencyUnit,
+)
 from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.noise import ActionNoise
 from stable_baselines3.common.buffers import ReplayBuffer
 
-SelfAsyncOffPolicyAlgorithm = TypeVar("SelfAsyncOffPolicyAlgorithm", bound="AsyncOffPolicyAlgorithm")
+SelfAsyncOffPolicyAlgorithm = TypeVar(
+    "SelfAsyncOffPolicyAlgorithm", bound="AsyncOffPolicyAlgorithm"
+)
+
 
 class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
     def learn(
@@ -26,7 +38,6 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
     ) -> SelfAsyncOffPolicyAlgorithm:
-
         total_timesteps, callback = self._setup_learn(
             total_timesteps,
             eval_env,
@@ -38,24 +49,30 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
             tb_log_name,
             progress_bar,
         )
-        
+
         callback.on_training_start(locals(), globals())
-        
+
         assert self.train_freq.frequency == 1, "Should always collect one step."
-        assert self.train_freq.unit == TrainFrequencyUnit.STEP, "Should always collect one step."
-    
-        while self.num_timesteps <= total_timesteps:  #  + self.env.num_envs  adjust limit as the last set of experiences is not used for training
+        assert (
+            self.train_freq.unit == TrainFrequencyUnit.STEP
+        ), "Should always collect one step."
+
+        while (
+            self.num_timesteps <= total_timesteps
+        ):  #  + self.env.num_envs  adjust limit as the last set of experiences is not used for training
             buffer_actions = self.async_collect_rollouts(
                 self.env,
                 action_noise=self.action_noise,
                 callback=callback,
                 learning_starts=self.learning_starts,
             )
-    
+
             if self.replay_buffer.size() > self.learning_starts:
                 # Special case when the user passes `gradient_steps=0`
                 if self.gradient_steps > 0:
-                    self.train(batch_size=self.batch_size, gradient_steps=self.gradient_steps)
+                    self.train(
+                        batch_size=self.batch_size, gradient_steps=self.gradient_steps
+                    )
 
             rollout = self.await_collect_rollouts(
                 self.env,
@@ -65,14 +82,14 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
                 replay_buffer=self.replay_buffer,
                 log_interval=log_interval,
             )
-            
+
             if rollout.continue_training is False:
                 break
-    
+
         callback.on_training_end()
 
         return self
-    
+
     def async_collect_rollouts(
         self,
         env: VecEnv,
@@ -103,26 +120,32 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
         assert isinstance(env, VecEnv), "You must pass a VecEnv"
 
         # Vectorize action noise if needed
-        if action_noise is not None and env.num_envs > 1 and not isinstance(action_noise, VectorizedActionNoise):
+        if (
+            action_noise is not None
+            and env.num_envs > 1
+            and not isinstance(action_noise, VectorizedActionNoise)
+        ):
             action_noise = VectorizedActionNoise(action_noise, env.num_envs)
 
         if self.use_sde:
             self.actor.reset_noise(env.num_envs)
 
         callback.on_rollout_start()
-        
-        #if self.use_sde and self.sde_sample_freq > 0:
+
+        # if self.use_sde and self.sde_sample_freq > 0:
         #    # Sample a new noise matrix
         #    self.actor.reset_noise(env.num_envs)
 
         # Select action randomly or according to policy
-        actions, buffer_actions = self._sample_action(learning_starts, action_noise, env.num_envs)
+        actions, buffer_actions = self._sample_action(
+            learning_starts, action_noise, env.num_envs
+        )
 
         # Rescale and perform action async
         env.step_async(actions)
-        
+
         return buffer_actions
-    
+
     def _sample_action(
         self,
         learning_starts: int,
@@ -131,7 +154,7 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Modified to assume exploration rate schedule, and therefore use the model in warmup
-        
+
         Sample an action according to the exploration policy.
         This is either done by sampling the probability distribution of the policy,
         or sampling a random action (from a uniform distribution over the action space)
@@ -165,7 +188,7 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
             buffer_action = unscaled_action
             action = buffer_action
         return action, buffer_action
-        
+
     def await_collect_rollouts(
         self,
         env: VecEnv,
@@ -189,7 +212,7 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
         :param buffer_actions: Actions to be stored in the replay buffer. Generated in the ``async_collect_rollouts`` function.
         :return:
         """
-        
+
         # Await results
         new_obs, rewards, dones, infos = env.step_wait()
 
@@ -205,9 +228,13 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
         self._update_info_buffer(infos, dones)
 
         # Store data in replay buffer (normalized action and unnormalized observation)
-        self._store_transition(replay_buffer, buffer_actions, new_obs, rewards, dones, infos)
+        self._store_transition(
+            replay_buffer, buffer_actions, new_obs, rewards, dones, infos
+        )
 
-        self._update_current_progress_remaining(self.num_timesteps, self._total_timesteps)
+        self._update_current_progress_remaining(
+            self.num_timesteps, self._total_timesteps
+        )
 
         # For DQN, check if the target network should be updated
         # and update the exploration schedule
@@ -229,7 +256,7 @@ class AsyncOffPolicyAlgorithm(OffPolicyAlgorithm):
                 # Log training infos
                 if log_interval is not None and self._episode_num % log_interval == 0:
                     self._dump_logs()
-                    
+
         callback.on_rollout_end()
 
         return RolloutReturn(env.num_envs, num_collected_episodes, True)
