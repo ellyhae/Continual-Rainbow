@@ -1,7 +1,7 @@
 # TODO add/fix docstrings
 # TODO add comments
 
-from typing import Any, Dict, List, Optional, Type, Tuple
+from typing import Any, Dict, List, Type, Tuple
 
 import torch as torch
 from torch import nn
@@ -360,7 +360,8 @@ class RainbowPolicy(BasePolicy):
             observation (Any): observation straight from the environment
 
         Returns:
-            Tuple[torch.Tensor, bool]: observations tensor and vectorized_env flag
+            (observations, is_vectorized) (Tuple[torch.Tensor, bool]): observations tensor and
+                a flag noting whether an observation is from a vectorized environment
         """
         if isinstance(observation, LazyVecStackedObservations):
             return (

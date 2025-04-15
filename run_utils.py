@@ -111,7 +111,7 @@ def initialize_logging(
         cfg (DictConfig): Configuration
 
     Returns:
-        Tuple[Run, Logger, List[BaseCallback]]
+        (run, logger, callbacks) (Tuple[Run, Logger, List[BaseCallback]]): the initialized objects
     """
     BaseAlgorithm.set_logger
     run = wandb.init(
