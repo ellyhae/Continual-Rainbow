@@ -1,0 +1,33 @@
+# @package _global_
+
+env:
+  env_name: CartPole-v1
+  parallel_envs: 10
+  time_limit: 500
+
+algorithm:
+  training_frames: 50000 #?
+
+  settings:
+    policy: MlpPolicy
+
+    learning_starts: 500
+    buffer_size: 50_000
+    batch_size: 128
+    target_update_interval: 100
+    prioritized_er_beta0_final: 0.51
+    gamma: 0.99
+    
+    learning_rate: 0.001
+
+    eps_decay_frames: 30_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
+
+    policy_kwargs:
+      # we assume that conrol environments do not need channel first transpose and /255
+      force_normalize_obs: False
+
+eval:
+  eval_freq: 1000
+
+checkpoint_freq: 1000
+wandb_gradient_save_freq: 1000

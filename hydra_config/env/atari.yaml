@@ -1,0 +1,36 @@
+# @package _global_
+
+env:
+  env_name: atari:Asterix
+  parallel_envs: 10 #64
+  time_limit: 108_000
+  frame_skip: 4
+  grayscale: True
+  resolution: [84, 84]
+
+algorithm:
+  training_frames: 10_000_000
+
+  settings:
+    policy: CnnPolicy
+
+    learning_starts: 80_000
+    buffer_size: 1_048_576 #2**20
+    batch_size: 256
+    target_update_interval: 32_000
+    prioritized_er_beta0_final: 1.0
+    
+    learning_rate: 0.00025
+
+    eps_decay_frames: 500_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
+
+    policy_kwargs:
+      force_normalize_obs: True
+      features_extractor_kwargs:
+        model_size: 2
+
+eval:
+  eval_freq: 15625 # 1_000_000 / 64 (n_envs)
+
+checkpoint_freq: 15625 # 1_000_000 / 64 (n_envs)
+wandb_gradient_save_freq: 1000
