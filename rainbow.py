@@ -1,7 +1,5 @@
-# TODO add/fix docstrings
-
 import warnings
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Literal
 
 import numpy as np
 import torch as torch
@@ -51,48 +49,13 @@ class NoiseReset(BaseCallback):
 
 class Rainbow(AsyncOffPolicyAlgorithm):
     """
-    Deep Q-Network (DQN)
+    Rainbow Algorithm
 
-    Paper: https://arxiv.org/abs/1312.5602, https://www.nature.com/articles/nature14236
-    Default hyperparameters are taken from the Nature paper,
-    except for the optimizer and learning rate that were taken from Stable Baselines defaults.
+    Paper: http://arxiv.org/abs/1710.02298 http://arxiv.org/abs/2111.10247
 
-    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
-    :param env: The environment to learn from (if registered in Gym, can be str)
-    :param learning_rate: The learning rate, it can be a function
-        of the current progress remaining (from 1 to 0)
-    :param buffer_size: size of the replay buffer
-    :param learning_starts: how many steps of the model to collect transitions for before learning starts
-    :param batch_size: Minibatch size for each gradient update
-    :param tau: the soft update coefficient ("Polyak update", between 0 and 1) default 1 for hard update
-    :param gamma: the discount factor
-    :param train_freq: Update the model every ``train_freq`` steps. Alternatively pass a tuple of frequency and unit
-        like ``(5, "step")`` or ``(2, "episode")``.
-    :param gradient_steps: How many gradient steps to do after each rollout (see ``train_freq``)
-        Set to ``-1`` means to do as many gradient steps as steps done in the environment
-        during the rollout.
-    :param replay_buffer_class: Replay buffer class to use (for instance ``HerReplayBuffer``).
-        If ``None``, it will be automatically selected.
-    :param replay_buffer_kwargs: Keyword arguments to pass to the replay buffer on creation.
-    :param optimize_memory_usage: Enable a memory efficient variant of the replay buffer
-        at a cost of more complexity.
-        See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
-    :param target_update_interval: update the target network every ``target_update_interval``
-        environment steps.
-    :param exploration_fraction: fraction of entire training period over which the exploration rate is reduced
-    :param exploration_initial_eps: initial value of random action probability
-    :param exploration_final_eps: final value of random action probability
-    :param max_grad_norm: The maximum value for the gradient clipping
-    :param stats_window_size: Window size for the rollout logging, specifying the number of episodes to average
-        the reported success rate, mean episode length, and mean reward over
-    :param tensorboard_log: the log location for tensorboard (if None, no logging)
-    :param policy_kwargs: additional arguments to be passed to the policy on creation
-    :param verbose: Verbosity level: 0 for no output, 1 for info messages (such as device or wrappers used), 2 for
-        debug messages
-    :param seed: Seed for the pseudo random generators
-    :param device: Device (cpu, cuda, ...) on which the code should be run.
-        Setting it to auto, the code will be run on the GPU if possible.
-    :param _init_setup_model: Whether or not to build the network at the creation of the instance
+    Default hyperparameters and code were mainly adapted from https://github.com/schmidtdominik/Rainbow
+
+    Much of the code structure is based on stable baseline 3's DQN implementation
     """
 
     policy_aliases: Dict[str, Type[BasePolicy]] = {
@@ -109,45 +72,84 @@ class Rainbow(AsyncOffPolicyAlgorithm):
     def __init__(
         self,
         policy: Union[str, Type[RainbowPolicy]],
-        env: Union[GymEnv, str],  # parallel_envs, subproc_vecenv
-        learning_rate: Union[
-            float, Schedule
-        ] = 0.00025,  # lr, lr_decay_steps, lr_decay_factor
-        buffer_size: int = int(2**20),  # capacity
-        learning_starts: int = 100_000,  # burnin
-        batch_size: int = 256,  # batch_size
+        env: Union[GymEnv, str],
+        learning_rate: Union[float, Schedule] = 0.00025,
+        buffer_size: int = int(2**20),
+        learning_starts: int = 100_000,
+        batch_size: int = 256,
         tau: float = 1.0,
-        gamma: float = 0.99,  # gamma
-        train_freq: Union[int, Tuple[int, str]] = (1, "step"),  # train after every step
-        gradient_steps: int = 2,  # train_count
-        replay_buffer_class: Optional[
-            Type[BaseBuffer]
-        ] = PrioritizedReplayBuffer,  # prioritized_er
-        replay_buffer_kwargs: Dict[str, Any] | None = None,  # n_step
-        optimize_memory_usage: bool = False,  # ignored
-        target_update_interval: int = 32_000,  # sync_dqn_target_every
-        exploration_fraction: float = 0.05,  # eps_decay_frames
-        exploration_initial_eps: float = 1.0,  # init_eps
-        exploration_final_eps: float = 0.01,  # final_eps
+        gamma: float = 0.99,
+        gradient_steps: int = 2,
+        replay_buffer_class: Optional[Type[BaseBuffer]] = PrioritizedReplayBuffer,
+        replay_buffer_kwargs: Dict[str, Any] | None = None,
+        optimize_memory_usage: bool = False,
+        target_update_interval: int = 32_000,
+        exploration_fraction: float = 0.05,
+        exploration_initial_eps: float = 1.0,
+        exploration_final_eps: float = 0.01,
         double_dqn: bool = True,
-        max_grad_norm: float = 10,  # max_grad_norm
-        loss_fn: str = "huber",  # loss_fn
-        # stats_window_size: int = 100,
+        max_grad_norm: float = 10,
+        loss_fn: Literal["huber", "mse"] = "huber",
         tensorboard_log: str | None = None,
-        policy_kwargs: Dict[str, Any] | None = {
-            "optimizer_kwargs": {"eps": None},
-        },  # noisy_dqn, noisy_sigma0, adam_eps
-        verbose: int = 0,
+        policy_kwargs: Dict[str, Any] | None = {"optimizer_kwargs": {"eps": None}},
+        verbose: Literal[0, 1, 2] = 0,
         seed: int | None = None,
         use_amp: bool = True,
         device: Union[torch.device, str] = "auto",
         _init_setup_model: bool = True,
     ) -> None:
+        """_summary_
+
+        Args:
+            policy (Union[str, Type[RainbowPolicy]]): The policy model to use (MlpPolicy, CnnPolicy)
+            env (Union[GymEnv, str]): The environment to learn from (if registered in Gym, can be str)
+            learning_rate (Union[float, Schedule], optional): The learning rate, it can be a function
+                of the current progress remaining (from 1 to 0). Defaults to 0.00025.
+            buffer_size (int, optional): size of the replay buffer. Defaults to int(2**20).
+            learning_starts (int, optional): how many steps of the model to collect transitions for before learning starts.
+                Defaults to 100_000.
+            batch_size (int, optional): Minibatch size for each gradient update. Defaults to 256.
+            tau (float, optional): the soft update coefficient ("Polyak update", between 0 and 1). Defaults to 1.0, hard update.
+            gamma (float, optional): the discount factor for a single step. May be adapted internally to fit n-step TD-target calculation.
+                Defaults to 0.99.
+            gradient_steps (int, optional): How many gradient steps to do during each rollout. Defaults to 2.
+            replay_buffer_class (Optional[Type[BaseBuffer]], optional): Replay buffer class to use.
+                If ``PrioritizedReplayBuffer``, then the ``gamma`` of this class is adjusted to use
+                the ``n_step`` bootstrapping gamma. Defaults to PrioritizedReplayBuffer.
+            replay_buffer_kwargs (Dict[str, Any] | None, optional): Keyword arguments to pass to the replay buffer on creation.
+                If ``replay_buffer_class`` is ``PrioritizedReplayBuffer`` then the ``gamma`` and ``use_amp`` arguments
+                of this class will be provided to the replay buffer. Defaults to None.
+            optimize_memory_usage (bool, optional): Enable a memory efficient variant of the replay buffer
+                at a cost of more complexity.
+                See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195.
+                Note: it depends on the ``replay_buffer_class`` if this parameter has any effect.
+                Defaults to False.
+            target_update_interval (int, optional): update the target network every ``target_update_interval``
+                timesteps. Note: when using a vectorized environment a single environment step + optimization
+                is counted as ``n_envs`` timesteps. Defaults to 32_000.
+            exploration_fraction (float, optional): fraction of entire training period over which the exploration rate is reduced. Defaults to 0.05.
+            exploration_initial_eps (float, optional): initial value of random action probability. Defaults to 1.0.
+            exploration_final_eps (float, optional): final value of random action probability. Defaults to 0.01.
+            double_dqn (bool, optional):  Whether or not to use a target network for TD-target calculation. Defaults to True.
+            max_grad_norm (float, optional): The maximum value for the gradient clipping. Defaults to 10.
+            loss_fn (Literal["huber", "mse"], optional): Loss function used in the optimization. Defaults to "huber".
+            tensorboard_log (str | None, optional): the log location for tensorboard (if None, no logging). Defaults to None.
+            policy_kwargs (Dict[str, Any] | None, optional): additional arguments to be passed to the policy on creation.
+                If policy_kwargs.optimizer_kwargs.eps is set to None, then it is replaced by 0.005 / batch_size.
+                Defaults to {"optimizer_kwargs": {"eps": None}}.
+            verbose (Literal[0, 1, 2], optional): Verbosity level: 0 for no output, 1 for info messages (such as device or wrappers used), 2 for
+                debug messages. Defaults to 0.
+            seed (int | None, optional): Seed for the pseudo random generators. Defaults to None.
+            use_amp (bool, optional): Whether or not to use Pytorch Automatic Mixed Precision. Defaults to True.
+            device (Union[torch.device, str], optional): Device (cpu, cuda, ...) on which the code should be run.
+                Setting it to auto, the code will be run on the GPU if possible.. Defaults to "auto".
+            _init_setup_model (bool, optional): Whether or not to build the network at the creation of the instance. Defaults to True.
+        """
         self.prioritized_er = replay_buffer_class == PrioritizedReplayBuffer
 
         if self.prioritized_er:
             if replay_buffer_kwargs is None:
-                replay_buffer_kwargs = {"n_step": 3}
+                replay_buffer_kwargs = {}
 
             replay_buffer_kwargs["gamma"] = gamma
             replay_buffer_kwargs["use_amp"] = use_amp
@@ -170,16 +172,17 @@ class Rainbow(AsyncOffPolicyAlgorithm):
                 print("Updated exploration parameters")
 
         super().__init__(
-            policy,
-            env,
-            learning_rate,
-            buffer_size,
-            learning_starts,
-            batch_size,
-            tau,
-            gamma,
-            train_freq,
-            gradient_steps,
+            policy=policy,
+            env=env,
+            learning_rate=learning_rate,
+            buffer_size=buffer_size,
+            learning_starts=learning_starts,
+            batch_size=batch_size,
+            tau=tau,
+            gamma=gamma,
+            # AsyncOffPolicyAlgorithm currently only supports 1 step in parllel
+            train_freq=(1, "step"),
+            gradient_steps=gradient_steps,
             action_noise=None,  # No action noise
             replay_buffer_class=replay_buffer_class,
             replay_buffer_kwargs=replay_buffer_kwargs,
