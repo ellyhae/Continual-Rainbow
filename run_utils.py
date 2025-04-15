@@ -85,12 +85,6 @@ def initialize_model(cfg: DictConfig, env: VecEnv) -> Rainbow:
     # This is an issue, as it is part of a a dictionary parameter passed to Rainbow, and therefore
     # a bit unwieldy to pass separately
 
-    # calculate the exploration_fraction parameter
-    if "eps_decay_frames" in cfg["settings"]:
-        cfg["settings"]["exploration_fraction"] = cfg["settings"].pop(
-            "eps_decay_frames"
-        ) / (cfg["training_frames"] + env.num_envs)
-
     # choose the appropriate optimizer class
     if isinstance(cfg["settings"]["policy_kwargs"]["optimizer_class"], str):
         cfg["settings"]["policy_kwargs"]["optimizer_class"] = (

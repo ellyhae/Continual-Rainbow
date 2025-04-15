@@ -1,7 +1,6 @@
 # TODO add/fix docstrings
 # TODO add comments
 
-
 import random
 from collections import deque
 from math import sqrt
@@ -16,6 +15,7 @@ from stable_baselines3.common.type_aliases import (
     ReplayBufferSamples,
 )
 from stable_baselines3.common.vec_env import VecNormalize
+from stable_baselines3.common.utils import get_linear_fn
 
 
 class PrioritizedReplayBuffer(BaseBuffer):
@@ -49,12 +49,18 @@ class PrioritizedReplayBuffer(BaseBuffer):
         n_envs: int = 1,
         n_step: int = 3,
         gamma: float = 0.99,
+        beta_initial: float = 0.45,  # 0.4 for rainbow, 0.5 for dopamine
+        beta_final: float = 1.0,  # set prioritized_er_beta0_initial == prioritized_er_beta0_final for constant value
+        beta_end_fraction: float = 1.0,
         use_amp: bool = True,
         optimize_memory_usage=False,  # ignored
     ):
         super().__init__(
             buffer_size, observation_space, action_space, device, n_envs=n_envs
         )
+
+        self.beta_schedule = get_linear_fn(beta_initial, beta_final, beta_end_fraction)
+        self.beta = beta_initial
 
         self.n_step = n_step
         self.gamma = gamma
@@ -175,9 +181,10 @@ class PrioritizedReplayBuffer(BaseBuffer):
             self._set_priority_min(idx, priority_alpha)
             self._set_priority_sum(idx, priority_alpha)
 
-    def sample(
-        self, batch_size: int, beta: float, env: Union[VecNormalize, None] = None
-    ):
+    def update_beta(self, current_progress_remaining: float):
+        self.beta = self.beta_schedule(current_progress_remaining)
+
+    def sample(self, batch_size: int, env: Union[VecNormalize, None] = None):
         weights = np.zeros(shape=batch_size, dtype=np.float32)
         indices = np.zeros(shape=batch_size, dtype=np.int32)
 
@@ -187,12 +194,12 @@ class PrioritizedReplayBuffer(BaseBuffer):
             indices[i] = idx
 
         prob_min = self._min() / self._sum()
-        max_weight = (prob_min * self.size()) ** (-beta)
+        max_weight = (prob_min * self.size()) ** (-self.beta)
 
         for i in range(batch_size):
             idx = indices[i]
             prob = self.priority_sum[idx + self.buffer_size] / self._sum()
-            weight = (prob * self.size()) ** (-beta)
+            weight = (prob * self.size()) ** (-self.beta)
             weights[i] = weight / max_weight
 
         return indices, weights, self._get_samples(indices, env)

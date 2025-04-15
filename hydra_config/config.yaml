@@ -44,7 +44,7 @@ algorithm:
     gradient_steps: 2
     replay_buffer_kwargs:
       n_step: 3
-    prioritized_er_beta0_initial: 0.45
+      beta_initial: 0.45
     gamma: 0.99
     
     learning_rate: ???
@@ -52,14 +52,11 @@ algorithm:
     loss_fn: 'huber'
     max_grad_norm: 10
 
-    eps_decay_frames: ???
+    exploration_fraction: ???
 
     policy_kwargs:
       noisy_linear: False
       linear_kwargs: {}
-      optimizer_kwargs:
-        betas: [0.9, 0.999]
-        eps: null  # will be set in the code
 
 checkpoint_dir: ./checkpoints/
 checkpoint_freq: ???

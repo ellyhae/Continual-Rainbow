@@ -18,11 +18,13 @@ algorithm:
     buffer_size: 1_048_576 #2**20
     batch_size: 256
     target_update_interval: 32_000
-    prioritized_er_beta0_final: 1.0
+    replay_buffer_kwargs:
+      beta_final: 1.0
     
     learning_rate: 0.00025
 
-    eps_decay_frames: 500_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
+    #eps_decay_frames: 500_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
+    exploration_fraction: 0.05
 
     policy_kwargs:
       force_normalize_obs: True

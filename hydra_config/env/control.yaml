@@ -15,12 +15,13 @@ algorithm:
     buffer_size: 50_000
     batch_size: 128
     target_update_interval: 100
-    prioritized_er_beta0_final: 0.51
-    gamma: 0.99
+    replay_buffer_kwargs:
+      beta_final: 0.51
     
     learning_rate: 0.001
 
-    eps_decay_frames: 30_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
+    #eps_decay_frames: 30_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
+    exploration_fraction: 0.6
 
     policy_kwargs:
       # we assume that conrol environments do not need channel first transpose and /255
