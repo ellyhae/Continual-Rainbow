@@ -1,5 +1,7 @@
-# TODO add/fix docstrings
-# TODO add comments
+"""
+A barebones adaptation of torch.optim.adam.py which tracks step information as
+tensors instad of scalars, thereby allowing CBP to individually reset the step of a weight
+"""
 
 from typing import List
 
@@ -9,9 +11,8 @@ from torch.optim import Adam
 
 
 class CAdam(Adam):
-    r"""
-    Barebone Adam adaptation with 'step' parameter for each weight in a parameter Tensor, instead of one number for the whole Tensor
-    """
+    r"""Barebone Adam adaptation with 'step' parameter for each weight
+    in a parameter Tensor, instead of one number for the whole Tensor"""
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -187,9 +188,9 @@ def _single_tensor_cadam(
         step = state_steps[i]
 
         if capturable:
-            assert (
-                param.is_cuda and step.is_cuda
-            ), "If capturable=True, params and state_steps must be CUDA tensors."
+            assert param.is_cuda and step.is_cuda, (
+                "If capturable=True, params and state_steps must be CUDA tensors."
+            )
 
         step.add_(1)
         if weight_decay != 0:
