@@ -1,8 +1,9 @@
-from typing import Any, Dict, List, Type, Tuple
+from typing import Any, Dict, List, Type, Tuple, Literal
 
 import torch as torch
 from torch import nn
 from gym import spaces
+from torch.optim import Optimizer, Adam
 
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.torch_layers import (
@@ -202,7 +203,7 @@ class RainbowPolicy(BasePolicy):
         normalize_images: bool = True,
         noisy_linear: bool = True,
         linear_kwargs: Dict[str, Any] | None = None,
-        optimizer_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
+        optimizer_class: Literal["Adam", "CBP"] | Type[Optimizer] = Adam,
         optimizer_kwargs: Dict[str, Any] | None = None,
         use_amp: bool = True,
         force_normalize_obs: bool = False,
@@ -224,7 +225,7 @@ class RainbowPolicy(BasePolicy):
             noisy_linear (bool, optional): Use noisy linear layers in the q-value networks. Defaults to True.
             linear_kwargs (Dict[str, Any] | None, optional): Additional arguments for the (noisy) linear
                 layers in the q-value networks. Defaults to None.
-            optimizer_class (Type[torch.optim.Optimizer], optional): Optimizer used for training the q-value networks. Defaults to torch.optim.Adam.
+            optimizer_class (Literal["Adam", "CBP"] | Type[Optimizer], optional): Optimizer used for training the q-value networks. Defaults to Adam.
             optimizer_kwargs (Dict[str, Any] | None, optional): Additional keyword arguments,
                 excluding the learning rate, to pass to the optimizer. Defaults to None.
             use_amp (bool, optional): Use Pytorch Automatic Mixed Precision, converting observations to float16. Defaults to True.
@@ -242,6 +243,10 @@ class RainbowPolicy(BasePolicy):
                 shape=(channels, height, width),
                 dtype=observation_space.dtype,
             )
+
+        if isinstance(optimizer_class, str):
+            optimizers = {"Adam": Adam, "CBP": CBP}
+            optimizer_class = optimizers[optimizer_class]
 
         super().__init__(
             observation_space,

@@ -25,11 +25,8 @@ from rainbow import Rainbow
 from env_wrappers import create_env
 from logging_callbacks import CBPLogger, WeightLogger
 
-from cbp import CBP
-
 import numpy as np
 import torch
-from torch.optim import Adam
 
 
 def set_random(seed: int):
@@ -78,20 +75,6 @@ def initialize_model(cfg: DictConfig, env: VecEnv) -> Rainbow:
     """Instantiates the specified Rainbow Algorithm"""
 
     cfg = OmegaConf.to_container(cfg, resolve=True)
-
-    # Using omegaconf open_dict and copy we could work directly on a DictConfig
-    # and therefore remove the string label notation.
-    # However, DictConfig only allows simple types, meaning the optimizer class could not be stored directly
-    # This is an issue, as it is part of a a dictionary parameter passed to Rainbow, and therefore
-    # a bit unwieldy to pass separately
-
-    # choose the appropriate optimizer class
-    if isinstance(cfg["settings"]["policy_kwargs"]["optimizer_class"], str):
-        cfg["settings"]["policy_kwargs"]["optimizer_class"] = (
-            Adam
-            if cfg["settings"]["policy_kwargs"]["optimizer_class"] == "Adam"
-            else CBP
-        )
 
     return Rainbow(env=env, **cfg["settings"])
 
