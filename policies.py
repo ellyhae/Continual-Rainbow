@@ -1,6 +1,3 @@
-# TODO add/fix docstrings
-# TODO add comments
-
 from typing import Any, Dict, List, Type, Tuple
 
 import torch as torch
@@ -406,7 +403,7 @@ class CnnPolicy(RainbowPolicy):
                 If None, will be chosen based on features_extractor_class. Defaults to None.
             activation_fn (Type[nn.Module], optional): Activation function for the q-value networks. Defaults to nn.ReLU.
             features_extractor_class (Type[BaseFeaturesExtractor], optional): Module used to convert input observations to
-                flattened feature tensor in q-value networks. Defaults to FlattenExtractor.
+                flattened feature tensor in q-value networks. Defaults to ImpalaCNNLarge.
             features_extractor_kwargs (Dict[str, Any] | None, optional): Keyword arguments
                 to pass to the features extractor. Defaults to None.
             normalize_images (bool, optional): Whether to normalize images or not, dividing by 255.0. Defaults to True.
@@ -419,7 +416,7 @@ class CnnPolicy(RainbowPolicy):
             use_amp (bool, optional): Use Pytorch Automatic Mixed Precision, converting observations to float16. Defaults to True.
             force_normalize_obs (bool, optional): Due to frame stacking stable baselines may not be able to recognize image data,
                 therefore skipping normalization and channel reordering. If this is set to True, the usual image preprocessing
-                is always done, no matter the observation space. Defaults to False.
+                is always done, no matter the observation space. Defaults to True.
         """
         super().__init__(
             observation_space=observation_space,
