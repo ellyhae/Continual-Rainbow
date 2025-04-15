@@ -1,16 +1,13 @@
-# TODO add/fix docstrings
-# TODO add comments
-
 import random
 from collections import deque
 from math import sqrt
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import torch
 from gym import spaces
 
-from stable_baselines3.common.buffers import BaseBuffer
+from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common.type_aliases import (
     ReplayBufferSamples,
 )
@@ -18,26 +15,17 @@ from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.utils import get_linear_fn
 
 
-class PrioritizedReplayBuffer(BaseBuffer):
+# making this a subclass of ReplayBuffer is simply to give an idea of what it does
+# it actually does not use any of the code in ReplayBuffer and could just be a subclass of BaseBuffer
+class PrioritizedReplayBuffer(ReplayBuffer):
     """originally based on https://nn.labml.ai/rl/dqn, supports n-step bootstrapping and parallel environments,
     removed alpha hyperparameter like google/dopamine (set to 0.5, i.e. sqrt)
 
+    this version is primarily based on https://github.com/schmidtdominik/Rainbow/blob/298c93d3d9322440d3a22cf24045b57af9c83fde/common/replay_buffer.py
 
-    Replay buffer used in off-policy algorithms like SAC/TD3.
-    :param buffer_size: Max number of element in the buffer
-    :param observation_space: Observation space
-    :param action_space: Action space
-    :param device: PyTorch device
-    :param n_envs: Number of parallel environments
-    :param optimize_memory_usage: Enable a memory efficient variant
-        of the replay buffer which reduces by almost a factor two the memory used,
-        at a cost of more complexity.
-        See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
-        and https://github.com/DLR-RM/stable-baselines3/pull/28#issuecomment-637559274
-        Cannot be used in combination with handle_timeout_termination.
-    :param handle_timeout_termination: Handle timeout termination (due to timelimit)
-        separately and treat the task as infinite horizon task.
-        https://github.com/DLR-RM/stable-baselines3/issues/284
+    adapted to approximately follow the stable baselines 3 Buffer design. Of course this was not completely possible,
+    as for example the training algorithm also needs to be made aware of the weights,
+    for which there is no inherent support in sb3
     """
 
     def __init__(
@@ -49,13 +37,32 @@ class PrioritizedReplayBuffer(BaseBuffer):
         n_envs: int = 1,
         n_step: int = 3,
         gamma: float = 0.99,
-        beta_initial: float = 0.45,  # 0.4 for rainbow, 0.5 for dopamine
-        beta_final: float = 1.0,  # set prioritized_er_beta0_initial == prioritized_er_beta0_final for constant value
+        beta_initial: float = 0.45,
+        beta_final: float = 1.0,
         beta_end_fraction: float = 1.0,
-        use_amp: bool = True,
-        optimize_memory_usage=False,  # ignored
+        optimize_memory_usage=False,
     ):
-        super().__init__(
+        """
+        Args:
+            buffer_size (int): Max number of elements in the buffer
+            observation_space (spaces.Space): Observation space of the environment
+            action_space (spaces.Space): Action space of the environment
+            device (Union[torch.device, str], optional): PyTorch device. Defaults to "auto".
+            n_envs (int, optional): Number of parallel environments. Defaults to 1.
+            n_step (int, optional): perform n-step bootstrapping by returning transitions that
+                cover ``n_step``s in the environment. Defaults to 3.
+            gamma (float, optional): the discount factor for a single step,
+                used to calculate n-step transitions. Defaults to 0.99.
+            beta_initial (float, optional): Initial beta value for weighted importance sampling.
+                0.4 for rainbow, 0.5 for dopamine. Defaults to 0.45.
+            beta_final (float, optional): Final beta value, should always be 1 to prevent bias. Defaults to 1.0.
+            beta_end_fraction (float, optional): fraction of entire training period over
+                which beta is reduced. Defaults to 1.0.
+            optimize_memory_usage (bool, optional): Ignored. Simply here to fit the automatic sb3 instantiation
+        """
+        # use super(ReplayBuffer, self) instead of super() to skip the ReplayBuffer.__init__
+        # that includes a lot of stuff that is not needed here
+        super(ReplayBuffer, self).__init__(
             buffer_size, observation_space, action_space, device, n_envs=n_envs
         )
 
@@ -64,8 +71,9 @@ class PrioritizedReplayBuffer(BaseBuffer):
 
         self.n_step = n_step
         self.gamma = gamma
-        self.use_amp = use_amp
 
+        # define buffers of type object, which can be used to index and slice data
+        # without evaluating the objects as arrays, thus preserving lazy frames
         self.observations = np.full(self.buffer_size, None)
         self.next_observations = np.full(self.buffer_size, None)
 
@@ -80,6 +88,7 @@ class PrioritizedReplayBuffer(BaseBuffer):
             (self.buffer_size,), dtype=torch.float32, device=self.device
         )
 
+        # queues used to construct n-step tranitions
         self.n_step_buffers = [
             deque(maxlen=self.n_step + 1) for j in range(self.n_envs)
         ]
@@ -102,7 +111,7 @@ class PrioritizedReplayBuffer(BaseBuffer):
         # as numpy cannot broadcast (n_discrete,) to (n_discrete, 1)
         if isinstance(self.observation_space, spaces.Discrete):
             obs = obs.reshape((self.n_envs, *self.obs_shape))
-            # next_obs = next_obs.reshape((self.n_envs, *self.obs_shape))
+            next_obs = next_obs.reshape((self.n_envs, *self.obs_shape))
 
         # Reshape to handle multi-dim and discrete action spaces, see GH #970 #1392
         action = action.reshape((self.n_envs, self.action_dim))
@@ -123,13 +132,16 @@ class PrioritizedReplayBuffer(BaseBuffer):
                         d = True
                         break
 
-                self.observations[self.pos] = o  # np.array(o).copy()
-                self.next_observations[self.pos] = no  # np.array(no).copy()
+                # store observation data without evaluating it
+                self.observations[self.pos] = o
+                self.next_observations[self.pos] = no
 
-                self.actions[self.pos] = self.to_torch(a)  # np.array(a).copy()
-                self.rewards[self.pos] = self.to_torch(r)  # np.array(r).copy()
-                self.dones[self.pos] = self.to_torch(d)  # np.array(d).copy()
+                # store scalar data
+                self.actions[self.pos] = self.to_torch(a)
+                self.rewards[self.pos] = self.to_torch(r)
+                self.dones[self.pos] = self.to_torch(d)
 
+                # set initial priority
                 self._set_priority_min(self.pos, sqrt(self.max_priority))
                 self._set_priority_sum(self.pos, sqrt(self.max_priority))
 
@@ -184,7 +196,19 @@ class PrioritizedReplayBuffer(BaseBuffer):
     def update_beta(self, current_progress_remaining: float):
         self.beta = self.beta_schedule(current_progress_remaining)
 
-    def sample(self, batch_size: int, env: Union[VecNormalize, None] = None):
+    def sample(
+        self, batch_size: int, env: Union[VecNormalize, None] = None
+    ) -> Tuple[np.ndarray, torch.Tensor, ReplayBufferSamples]:
+        """Sample from the prioritized transition distribution
+
+        Args:
+            batch_size (int): Number of elements to sample
+            env (Union[VecNormalize, None], optional): Ignored. Not supported at the moment
+
+        Returns:
+            (indices, weights, samples) (Tuple[np.ndarray, torch.Tensor, ReplayBufferSamples]):
+                The usual replay buffer samples along with their indices in the buffer and corresponding weights
+        """
         weights = np.zeros(shape=batch_size, dtype=np.float32)
         indices = np.zeros(shape=batch_size, dtype=np.int32)
 
@@ -202,26 +226,30 @@ class PrioritizedReplayBuffer(BaseBuffer):
             weight = (prob * self.size()) ** (-self.beta)
             weights[i] = weight / max_weight
 
-        return indices, weights, self._get_samples(indices, env)
+        return (
+            indices,
+            torch.from_numpy(weights).to(self.device),
+            self._get_samples(indices, env),
+        )
 
     def obs_to_torch(self, array, copy=True):
         array = np.stack([np.array(obs, copy=False) for obs in array])
         return super().to_torch(array, copy)
 
     def _get_samples(
-        self, batch_inds: np.ndarray, env: Optional[VecNormalize] = None
+        self, batch_inds: np.ndarray, env: VecNormalize | None = None
     ) -> ReplayBufferSamples:
-        data = (
+        return ReplayBufferSamples(
             self.obs_to_torch(self.observations[batch_inds]),
             self.actions[batch_inds, :],
             self.obs_to_torch(self.next_observations[batch_inds]),
             self.dones[batch_inds].reshape(-1, 1),
             self.rewards[batch_inds].reshape(-1, 1),
         )
-        return ReplayBufferSamples(*data)
 
     def reset(self):
-        super().reset()  # reset pos and full. Causes e.g. observations to be automatically overwritten, so nned to reset them
+        # reset pos and full. Causes e.g. observations to be automatically overwritten, so need to reset them
+        super().reset()
 
         self.n_step_buffers = [
             deque(maxlen=self.n_step + 1) for j in range(self.n_envs)

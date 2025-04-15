@@ -7,7 +7,7 @@ from torch import Tensor
 from torch.cuda.amp import GradScaler, autocast
 from gym import spaces
 
-from stable_baselines3.common.buffers import BaseBuffer
+from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import (
@@ -80,7 +80,7 @@ class Rainbow(AsyncOffPolicyAlgorithm):
         tau: float = 1.0,
         gamma: float = 0.99,
         gradient_steps: int = 2,
-        replay_buffer_class: Optional[Type[BaseBuffer]] = PrioritizedReplayBuffer,
+        replay_buffer_class: Optional[Type[ReplayBuffer]] = PrioritizedReplayBuffer,
         replay_buffer_kwargs: Dict[str, Any] | None = None,
         optimize_memory_usage: bool = False,
         target_update_interval: int = 32_000,
@@ -113,11 +113,11 @@ class Rainbow(AsyncOffPolicyAlgorithm):
             gamma (float, optional): the discount factor for a single step. May be adapted internally to fit n-step TD-target calculation.
                 Defaults to 0.99.
             gradient_steps (int, optional): How many gradient steps to do during each rollout. Defaults to 2.
-            replay_buffer_class (Optional[Type[BaseBuffer]], optional): Replay buffer class to use.
+            replay_buffer_class (Optional[Type[ReplayBuffer]], optional): Replay buffer class to use.
                 If ``PrioritizedReplayBuffer``, then the ``gamma`` of this class is adjusted to use
                 the ``n_step`` bootstrapping gamma. Defaults to PrioritizedReplayBuffer.
             replay_buffer_kwargs (Dict[str, Any] | None, optional): Keyword arguments to pass to the replay buffer on creation.
-                If ``replay_buffer_class`` is ``PrioritizedReplayBuffer`` then the ``gamma`` and ``use_amp`` arguments
+                If ``replay_buffer_class`` is ``PrioritizedReplayBuffer`` then the ``gamma`` argument
                 of this class will be provided to the replay buffer. Defaults to None.
             optimize_memory_usage (bool, optional): Enable a memory efficient variant of the replay buffer
                 at a cost of more complexity.
@@ -152,7 +152,6 @@ class Rainbow(AsyncOffPolicyAlgorithm):
                 replay_buffer_kwargs = {}
 
             replay_buffer_kwargs["gamma"] = gamma
-            replay_buffer_kwargs["use_amp"] = use_amp
 
         self.exploration_initial_eps = exploration_initial_eps
         self.exploration_final_eps = exploration_final_eps
