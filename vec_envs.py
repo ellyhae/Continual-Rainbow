@@ -73,7 +73,21 @@ class SubprocVecEnvNoFlatten(SubprocVecEnv):
 
 
 class LazyStackedObservations:
-    def __init__(self, frames, lz4_compress=False, stack_axis=0):
+    """A slightly modified version of gym's LazyFrames,
+    which stacks (concatenates) along an existing axis instad of creating a new axis.
+
+    Ensures common frames are only stored once to optimize memory use."""
+
+    def __init__(
+        self, frames: List[np.ndarray], lz4_compress: bool = False, stack_axis: int = -1
+    ):
+        """
+        Args:
+            frames (List[np.ndarray]): observation data to be stored
+            lz4_compress (bool, optional): use lz4 to compress the frames internally. Defaults to False.
+            stack_axis (int, optional): channel axis for the observation data, along which successive frames are stacked.
+                                        Defaults to -1.
+        """
         self.frame_shape = tuple(frames[0].shape)
         self.shape = np.repeat(self.frame_shape, len(frames), axis=stack_axis)
         self.stack_axis = stack_axis
@@ -116,6 +130,8 @@ class LazyStackedObservations:
 
 
 class LazyVecStackedObservations(list):
+    """A simple list subclass, which supports conversion to a numpy array"""
+
     def __array__(self, dtype=None):
         arr = np.stack([obs.__array__() for obs in self])
         if dtype is not None:
@@ -138,7 +154,11 @@ class LazyVecFrameStack(VecEnvWrapper):
     Args:
         venv (VecEnv): environment object
         num_stack (int): number of stacks
-        lz4_compress (bool): use lz4 to compress the frames internally
+        clone_arrays (bool): when using procgen with DummyVecEnv there may be some memory issues,
+                             which can be fixed by copying data
+        lz4_compress (bool, optional): use lz4 to compress the frames internally
+        channel_axis (int, optional): channel axis for the observation data, along which successive frames are stacked.
+                                      Defaults to -1.
     """
 
     def __init__(
