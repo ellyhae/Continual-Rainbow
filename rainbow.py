@@ -210,8 +210,8 @@ class Rainbow(AsyncOffPolicyAlgorithm):
 
         # if PER is being used, then a weighted average is computed in the train method
         # for that the loss needs to not be reduced
-        loss_fn_cls = torch.nn.MSELoss if loss_fn == "mse" else torch.nn.SmoothL1Loss
-        self.loss_fn = loss_fn_cls(
+        loss_fns_cls = {"mse": torch.nn.MSELoss, "huber": torch.nn.SmoothL1Loss}
+        self.loss_fn = loss_fns_cls[loss_fn](
             reduction=("none" if self.prioritized_er else "mean")
         )
 
