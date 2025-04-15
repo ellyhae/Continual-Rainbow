@@ -156,6 +156,7 @@ class RainbowNetwork(BasePolicy):
 class RainbowPolicy(BasePolicy):
     """
     Policy class with Q-Value Net and target net for DQN
+
     :param observation_space: Observation space
     :param action_space: Action space
     :param lr_schedule: Learning rate schedule (could be constant)
@@ -190,7 +191,7 @@ class RainbowPolicy(BasePolicy):
         optimizer_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
         use_amp: bool = True,
-        force_normalize_obs: bool = True,
+        force_normalize_obs: bool = False,
     ) -> None:
         if force_normalize_obs:
             height, width, channels = observation_space.shape
@@ -317,6 +318,7 @@ MlpPolicy = RainbowPolicy
 class CnnPolicy(RainbowPolicy):
     """
     Policy class for DQN when using images as input.
+
     :param observation_space: Observation space
     :param action_space: Action space
     :param lr_schedule: Learning rate schedule (could be constant)
@@ -345,6 +347,7 @@ class CnnPolicy(RainbowPolicy):
         linear_kwargs: Dict[str, Any] = {"sigma_0": 0.5},
         optimizer_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
+        force_normalize_obs: bool = True,
     ) -> None:
         super().__init__(
             observation_space,
@@ -359,4 +362,5 @@ class CnnPolicy(RainbowPolicy):
             linear_kwargs,
             optimizer_class,
             optimizer_kwargs,
+            force_normalize_obs=force_normalize_obs,
         )
