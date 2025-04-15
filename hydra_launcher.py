@@ -31,6 +31,7 @@ def run_experiment(cfg: DictConfig) -> None:
     env = set_up_env(cfg.env)
     model = initialize_model(cfg.algorithm, env)
     run, logger, callbacks = initialize_logging(cfg)
+
     model.set_logger(logger)
 
     model.learn(
@@ -47,7 +48,7 @@ def run_experiment(cfg: DictConfig) -> None:
     save_evaluation(cfg, model)
 
     # to prevent errors, close the logger before finishing a run, thereby ensuring that all data has been processed
-    model.logger.close()
+    logger.close()
     run.finish()
 
 
