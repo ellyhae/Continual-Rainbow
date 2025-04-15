@@ -17,6 +17,11 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvW
 
 import numpy as np
 
+try:
+    from lz4.block import compress, decompress
+except ImportError:
+    compress = decompress = None
+
 
 class DummyVecEnvNoFlatten(DummyVecEnv):
     """
@@ -101,8 +106,6 @@ class LazyStackedObservations:
         self.stack_axis = stack_axis
         self.dtype = frames[0].dtype
         if lz4_compress:
-            from lz4.block import compress
-
             frames = [compress(frame) for frame in frames]
         self._frames = frames
         self.lz4_compress = lz4_compress
@@ -129,8 +132,6 @@ class LazyStackedObservations:
 
     def _check_decompress(self, frame):
         if self.lz4_compress:
-            from lz4.block import decompress
-
             return np.frombuffer(decompress(frame), dtype=self.dtype).reshape(
                 self.frame_shape
             )
