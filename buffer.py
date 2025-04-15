@@ -198,7 +198,7 @@ class PrioritizedReplayBuffer(BaseBuffer):
         return indices, weights, self._get_samples(indices, env)
 
     def obs_to_torch(self, array, copy=True):
-        array = np.stack([np.array(obs, copy=None) for obs in array])
+        array = np.stack([np.array(obs, copy=False) for obs in array])
         return super().to_torch(array, copy)
 
     def _get_samples(
