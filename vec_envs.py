@@ -89,7 +89,15 @@ class LazyStackedObservations:
                                         Defaults to -1.
         """
         self.frame_shape = tuple(frames[0].shape)
-        self.shape = np.repeat(self.frame_shape, len(frames), axis=stack_axis)
+        start_shape, end_shape = (
+            self.frame_shape[:stack_axis],
+            self.frame_shape[stack_axis:],
+        )
+        self.shape = (
+            *start_shape,
+            end_shape[0] * len(frames),
+            *end_shape[1:],
+        )
         self.stack_axis = stack_axis
         self.dtype = frames[0].dtype
         if lz4_compress:
@@ -137,6 +145,10 @@ class LazyVecStackedObservations(list):
         if dtype is not None:
             return arr.astype(dtype)
         return arr
+
+    @property
+    def shape(self):
+        return (len(self), *self[0].shape)
 
 
 class LazyVecFrameStack(VecEnvWrapper):
