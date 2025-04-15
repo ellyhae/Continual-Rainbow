@@ -461,7 +461,10 @@ def create_env(args: SimpleNamespace, decorr_steps: int | None = None) -> VecEnv
     env = LazyVecFrameStack(
         env, args.frame_stack, clone_arrays=not args.subproc_vecenv, lz4_compress=False
     )
-    # add a VecTransposeImage wrapper that is always skipped
-    # otherwise, BaseAlgorithm may add it automatically, breaking many things
-    env = VecTransposeImage(env, skip=True)
+    try:
+        # add a VecTransposeImage wrapper that is always skipped
+        # otherwise, BaseAlgorithm may add it automatically, breaking many things
+        env = VecTransposeImage(env, skip=True)
+    except:  # if there was an exception, then the env does not need the wrapper
+        pass
     return env
