@@ -309,7 +309,7 @@ def create_retro_env(
 ) -> Env:
     """Creates a retro environment and applies recommended wrappers."""
 
-    # import retro only when needed, therefore making an optional package that does not need to be installed
+    # import retro only when needed, therefore making it an optional package that does not need to be installed
     import retro
     from retro.examples.discretizer import Discretizer
 
@@ -465,6 +465,7 @@ def create_env(args: SimpleNamespace, decorr_steps: int | None = None) -> VecEnv
         # add a VecTransposeImage wrapper that is always skipped
         # otherwise, BaseAlgorithm may add it automatically, breaking many things
         env = VecTransposeImage(env, skip=True)
-    except:  # if there was an exception, then the env does not need the wrapper
+    except AssertionError:
+        # if there was an exception, then the env does not need the wrapper
         pass
     return env
