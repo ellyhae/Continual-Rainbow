@@ -1,7 +1,4 @@
-# TODO add/fix docstrings
-# TODO add comments
-
-from typing import Dict, List, Type, Any, Optional, Callable
+from typing import Dict, List, Type, Any, Literal, Callable
 from math import sqrt
 
 import gym
@@ -13,8 +10,6 @@ from torch.nn import init
 import torch.nn.functional as F
 
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-
-# torch.backends.cudnn.deterministic = True
 
 
 # adapted from Rainbow/common/networks.py
@@ -100,17 +95,17 @@ def create_mlp(
     Optionally: use noisy Linear layers instead of normal Linear layers (paper NOISY NETWORKS FOR EXPLORATION)
 
     :param input_dim: Dimension of the input vector
-    :param output_dim:
+    :param output_dim: Dimension of the output vector
     :param net_arch: Architecture of the neural net
         It represents the number of units per layer.
         The length of this list is the number of layers.
     :param activation_fn: The activation function
         to use after each layer.
-    :param squash_output: Whether to squash the output using a Tanh
-        activation function
     :param noisy_linear: If set to True, noisy Linear layers will be used instead of normal Linear layers
     :param linear_kwargs: Keyword arguments for the linear layers
-    :return:
+    :param squash_output: Whether to squash the output using a Tanh
+        activation function
+    :return: The specified MLP
     """
 
     linear_layer = nn.Linear if not noisy_linear else FactorizedNoisyLinear
@@ -137,7 +132,8 @@ def create_mlp(
 
 # adapted from Rainbow/common/networks.py
 class Dueling(nn.Module):
-    """The dueling branch used in all nets that use dueling-dqn."""
+    """Dueling Network for Q-value estimation, wherein the computation is split into an
+    estimation of the state-value and the estimation of the state-action advantages"""
 
     def __init__(self, value_branch: nn.Module, advantage_branch: nn.Module) -> None:
         super().__init__()
@@ -155,9 +151,7 @@ class Dueling(nn.Module):
 
 # copied from Rainbow/common/networks.py
 class ImpalaCNNResidual(nn.Module):
-    """
-    Simple residual block used in the large IMPALA CNN.
-    """
+    """Simple residual block used in the large IMPALA CNN."""
 
     def __init__(self, depth: int, norm_func: Callable) -> None:
         super().__init__()
@@ -190,9 +184,7 @@ class ImpalaCNNResidual(nn.Module):
 
 # copied from Rainbow/common/networks.py
 class ImpalaCNNBlock(nn.Module):
-    """
-    Three of these blocks are used in the large IMPALA CNN.
-    """
+    """Three of these blocks are used in the large IMPALA CNN."""
 
     def __init__(self, depth_in: int, depth_out: int, norm_func: Callable) -> None:
         super().__init__()
@@ -217,44 +209,42 @@ class ImpalaCNNBlock(nn.Module):
 
 
 class ImpalaCNNLarge(BaseFeaturesExtractor):
-    """
-    CNN part of the Impala Architecture plus a single (noisy) Linear layer. Extracts features from images
-    :param observation_space:
-    :param features_dim: Number of features extracted.
-        This corresponds to the number of unit for the last layer.
-    :param normalized_image: Whether to assume that the image is already normalized
-        or not (this disables dtype and bounds checks): when True, it only checks that
-        the space is a Box and has 3 dimensions.
-        Otherwise, it checks that it has expected dtype (uint8) and bounds (values in [0, 255]).
-    """
+    """CNN part of the Impala Architecture plus possibly a
+    single Linear layer. Extracts features from images"""
 
     def __init__(
         self,
         observation_space: gym.Space,
-        features_dim: Optional[int] = None,  # only flatten unless value is supplied
+        features_dim: int | None = None,
         model_size: int = 2,
-        spectral_norm: str = "all",
+        spectral_norm: Literal["all", "last", "none"] = "all",
         activation_fn: Type[nn.Module] = nn.ReLU,
-        # normalized_image: bool = False,
     ) -> None:
+        """
+        Args:
+            observation_space (gym.Space): The observation space of the environment
+            features_dim (int | None, optional): Number of features extracted.
+                If not None, then the Impala output is converted to the specified size using an
+                additional Linear layer. Defaults to None.
+            model_size (int, optional): multiplier for the number of channels in
+                each impala block. Defaults to 2.
+            spectral_norm (Literal["all", "last", "none"], optional): Use spectral norm
+                in all impala blocks, only the last block or none of them. Defaults to "all".
+            activation_fn (Type[nn.Module], optional): activation function
+                after impala blocks. Defaults to nn.ReLU.
+        """
         assert isinstance(observation_space, spaces.Box), (
             "ImpalaCNNLarge must be used with a gym.spaces.Box ",
             f"observation space, not {observation_space}",
         )
-        super().__init__(observation_space, 1)
-        # We assume CxHxW images (channels first)
-        # Re-ordering will be done by pre-preprocessing or wrapper
-        # assert is_image_space(observation_space, check_channels=False), ( #, normalized_image=normalized_image
-        #    "You should use ImpalaCNNLarge "
-        #    f"only with images not with {observation_space}\n"
-        #    "(you are probably using `CnnPolicy` instead of `MlpPolicy` or `MultiInputPolicy`)\n"
-        #    "If you are using a custom environment,\n"
-        #    "please check it using our env checker:\n"
-        #    "https://stable-baselines3.readthedocs.io/en/master/common/env_checker.html.\n"
-        #    "If you are using `VecNormalize` or already normalized channel-first images "
-        #    "you should pass `normalize_images=False`: \n"
-        #    "https://stable-baselines3.readthedocs.io/en/master/guide/custom_env.html"
-        # )
+
+        # size of flattened output. Always of this form due to the adaptive max pool
+        n_flatten = 32 * model_size * 8**2
+
+        super().__init__(
+            observation_space=observation_space,
+            features_dim=n_flatten if features_dim is None else features_dim,
+        )
         n_input_channels = observation_space.shape[0]
 
         norm_func = (
@@ -271,22 +261,16 @@ class ImpalaCNNLarge(BaseFeaturesExtractor):
             ImpalaCNNBlock(16 * model_size, 32 * model_size, norm_func=norm_func),
             ImpalaCNNBlock(32 * model_size, 32 * model_size, norm_func=norm_func_last),
             activation_fn(),
-            torch.nn.AdaptiveMaxPool2d(
-                (8, 8)
-            ),  # reduces output to shape (batch_size, 32*model_size, 8, 8)
+            torch.nn.AdaptiveMaxPool2d((8, 8)),
+            # output shape (batch_size, 32*model_size, 8, 8)
             torch.nn.Flatten(),
         )
-
-        n_flatten = 32 * model_size * 8**2
 
         self.last = nn.Identity()
         if features_dim is not None:
             self.last = nn.Sequential(
                 torch.nn.Linear(n_flatten, features_dim), torch.nn.ReLU()
             )
-            self._features_dim = features_dim
-        else:
-            self._features_dim = n_flatten
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
         return self.last(self.main(observations))
