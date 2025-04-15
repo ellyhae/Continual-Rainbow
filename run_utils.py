@@ -170,10 +170,16 @@ def save_evaluation(cfg: DictConfig, model: BaseAlgorithm) -> None:
 
     env = set_up_env(eval_args.env)
 
-    res = evaluate_policy(
+    episode_rewards, episode_lengths = evaluate_policy(
         model, env, eval_args.eval.n_eval_episodes, return_episode_rewards=True
     )
 
     env.close()
 
-    np.save("final_evaluation", res)
+    mean_reward, mean_length = np.mean(episode_rewards), np.mean(episode_lengths)
+
+    model.logger.record("eval/mean_reward", float(mean_reward))
+    model.logger.record("eval/mean_ep_length", mean_length)
+    model.logger.dump(step=model.num_timesteps)
+
+    np.save("final_evaluation", (episode_rewards, episode_lengths))
