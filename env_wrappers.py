@@ -24,6 +24,7 @@ from stable_baselines3.common.atari_wrappers import (
     AtariWrapper,
 )
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
+from stable_baselines3.common.vec_env.vec_transpose import VecTransposeImage
 
 from vec_envs import DummyVecEnvNoFlatten, LazyVecFrameStack, SubprocVecEnvNoFlatten
 
@@ -460,4 +461,7 @@ def create_env(args: SimpleNamespace, decorr_steps: int | None = None) -> VecEnv
     env = LazyVecFrameStack(
         env, args.frame_stack, clone_arrays=not args.subproc_vecenv, lz4_compress=False
     )
+    # add a VecTransposeImage wrapper that is always skipped
+    # otherwise, BaseAlgorithm may add it automatically, breaking many things
+    env = VecTransposeImage(env, skip=True)
     return env

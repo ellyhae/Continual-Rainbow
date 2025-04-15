@@ -14,9 +14,10 @@ from stable_baselines3.common.torch_layers import (
     FlattenExtractor,
 )
 from stable_baselines3.common.type_aliases import Schedule
+from stable_baselines3.common.preprocessing import preprocess_obs
 
+from vec_envs import LazyVecStackedObservations
 from torch_layers import ImpalaCNNLarge, create_mlp, Dueling
-from logging_callbacks import prep_observation_for_qnet
 from cbp import CBP, prepare_cbp_kwargs
 
 
@@ -42,8 +43,10 @@ class RainbowNetwork(BasePolicy):
         net_arch: Optional[List[int]] = None,
         activation_fn: Type[nn.Module] = nn.ReLU,
         normalize_images: bool = True,
+        force_normalize_obs: bool = True,
         noisy_linear: bool = True,
         linear_kwargs: Dict[str, Any] = {"sigma_0": 0.5},
+        use_amp: bool = True,
     ) -> None:
         super().__init__(
             observation_space,
@@ -59,6 +62,10 @@ class RainbowNetwork(BasePolicy):
 
         if net_arch is None:
             net_arch = [256]
+
+        self.force_normalize_obs = force_normalize_obs
+        self.use_amp = use_amp
+        self.amp_dtype = torch.float16 if self.use_amp else torch.float32
 
         self.net_arch = net_arch
         self.activation_fn = activation_fn
@@ -96,6 +103,31 @@ class RainbowNetwork(BasePolicy):
         :return: The estimated Q-Value for each action.
         """
         return self.dueling(self.extract_features(obs), advantages_only=advantages_only)
+
+    def extract_features(self, obs: torch.Tensor) -> torch.Tensor:
+        """
+        Preprocess the observation if needed and extract features.
+
+        :param obs:
+        :return:
+        """
+        assert self.features_extractor is not None, "No features extractor was set"
+
+        preprocessed_obs = self.preprocess_obs(obs)
+
+        return self.features_extractor(preprocessed_obs)
+
+    def preprocess_obs(self, obs: torch.Tensor) -> torch.Tensor:
+        if self.force_normalize_obs:
+            preprocessed_obs = obs.permute(
+                (2, 0, 1) if len(obs.shape) == 3 else (0, 3, 1, 2)
+            )
+            return preprocessed_obs.to(dtype=self.amp_dtype) / 255
+
+        preprocessed_obs = preprocess_obs(
+            obs, self.observation_space, self.normalize_images
+        )
+        return preprocessed_obs.to(dtype=self.amp_dtype)
 
     def _predict(
         self, observation: torch.Tensor, deterministic: bool = True
@@ -158,7 +190,17 @@ class RainbowPolicy(BasePolicy):
         optimizer_class: Type[torch.optim.Optimizer] = torch.optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
         use_amp: bool = True,
+        force_normalize_obs: bool = True,
     ) -> None:
+        if force_normalize_obs:
+            height, width, channels = observation_space.shape
+            observation_space = spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(channels, height, width),
+                dtype=observation_space.dtype,
+            )
+
         super().__init__(
             observation_space,
             action_space,
@@ -189,6 +231,8 @@ class RainbowPolicy(BasePolicy):
             "normalize_images": normalize_images,
             "noisy_linear": self.noisy_linear,
             "linear_kwargs": linear_kwargs,
+            "use_amp": use_amp,
+            "force_normalize_obs": force_normalize_obs,
         }
 
         self.use_amp = use_amp
@@ -232,7 +276,7 @@ class RainbowPolicy(BasePolicy):
         return RainbowNetwork(**net_args).to(self.device)
 
     def forward(self, obs: torch.Tensor, deterministic: bool = True) -> torch.Tensor:
-        return self._predict(obs, deterministic=deterministic)
+        return self.q_net._predict(obs, deterministic=deterministic)
 
     def _predict(self, obs: torch.Tensor, deterministic: bool = True) -> torch.Tensor:
         return self.q_net._predict(obs, deterministic=deterministic)
@@ -259,10 +303,11 @@ class RainbowPolicy(BasePolicy):
         Loses flexibility (non-vectorized envs, ...)
         Adds frame stacking support
         """
-        if isinstance(observation, list):
-            return prep_observation_for_qnet(
-                torch.from_numpy(np.stack(observation)), self.use_amp
-            ), True
+        if isinstance(observation, LazyVecStackedObservations):
+            return (
+                torch.from_numpy(observation.__array__()).to(self.device),
+                True,
+            )
         return super().obs_to_tensor(observation)
 
 

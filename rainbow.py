@@ -132,6 +132,7 @@ class Rainbow(AsyncOffPolicyAlgorithm):
         tensorboard_log: Optional[str] = None,
         policy_kwargs: Optional[Dict[str, Any]] = {
             "noisy_linear": True,
+            "force_normalize_obs": True,
             "linear_kwargs": {"sigma_0": 0.5},
             "optimizer_kwargs": {"eps": None},
         },  # noisy_dqn, noisy_sigma0, adam_eps
@@ -266,7 +267,8 @@ class Rainbow(AsyncOffPolicyAlgorithm):
 
     @torch.no_grad()
     def _td_target(self, reward: float, next_state, done: bool):
-        reset_noise(self.q_net_target)
+        if self.noisy_dqn:
+            reset_noise(self.q_net_target)
         if self.double_dqn:
             best_action = torch.argmax(
                 self.q_net(next_state, advantages_only=True), dim=1
@@ -303,7 +305,6 @@ class Rainbow(AsyncOffPolicyAlgorithm):
                 replay_data = self.replay_buffer.sample(
                     batch_size, env=self._vec_normalize_env
                 )
-            # replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)  # type: ignore[union-attr]
 
             with autocast(enabled=self.use_amp):
                 # removed replay_data.actions.unsqueeze(1)
@@ -321,9 +322,8 @@ class Rainbow(AsyncOffPolicyAlgorithm):
                 self.policy.optimizer.zero_grad()
                 if self.prioritized_er:
                     td_errors = td_est - td_tgt
-                    new_priorities = (
-                        np.abs(td_errors.detach().cpu().numpy()) + 1e-6
-                    )  # 1e-6 is the epsilon in PER
+                    # 1e-6 is the epsilon in PER
+                    new_priorities = np.abs(td_errors.detach().cpu().numpy()) + 1e-6
                     self.replay_buffer.update_priorities(indices, new_priorities)
 
                     cur_losses = self.loss_fn(td_tgt, td_est)
@@ -355,6 +355,7 @@ class Rainbow(AsyncOffPolicyAlgorithm):
         self.logger.record("train/q_value", np.mean(qs))
         self.logger.dump(self.num_timesteps)
 
+    @torch.no_grad
     def predict(
         self,
         observation: Union[np.ndarray, Dict[str, np.ndarray]],
@@ -372,16 +373,14 @@ class Rainbow(AsyncOffPolicyAlgorithm):
         :return: the model's action and the next state
             (used in recurrent policies)
         """
-
-        with torch.no_grad():
-            with autocast(enabled=self.use_amp):
-                action, state = self.policy.predict(
-                    observation, state, episode_start, deterministic
-                )
-                if not deterministic and self.exploration_rate > 0:
-                    for i in range(action.shape[0]):
-                        if random.random() < self.exploration_rate:
-                            action[i] = self.action_space.sample()
+        with autocast(enabled=self.use_amp):
+            action, state = self.policy.predict(
+                observation, state, episode_start, deterministic
+            )
+        if not deterministic and self.exploration_rate > 0:
+            for i in range(action.shape[0]):
+                if random.random() < self.exploration_rate:
+                    action[i] = self.action_space.sample()
 
         return action, state
 

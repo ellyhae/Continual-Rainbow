@@ -17,18 +17,6 @@ from stable_baselines3.common.type_aliases import (
 )
 from stable_baselines3.common.vec_env import VecNormalize
 
-try:
-    # Check memory used by replay buffer when possible
-    import psutil
-except ImportError:
-    psutil = None
-
-from logging_callbacks import prep_observation_for_qnet
-
-
-def stack_lazy(data):
-    return torch.stack(list(map(lambda x: torch.from_numpy(x.__array__()), data)))
-
 
 class PrioritizedReplayBuffer(BaseBuffer):
     """originally based on https://nn.labml.ai/rl/dqn, supports n-step bootstrapping and parallel environments,
@@ -115,9 +103,9 @@ class PrioritizedReplayBuffer(BaseBuffer):
 
         for queue, o, a, r, d in zip(self.n_step_buffers, obs, action, reward, done):
             queue.append((o, a, r, d))
-            if (
-                len(queue) == self.n_step + 1 and not queue[0][3]
-            ):  # n-step transition can't start on a terminal state
+
+            # n-step transition can't start on a terminal state
+            if len(queue) == self.n_step + 1 and not queue[0][3]:
                 # get first and last states of the n_step stransition
                 o, a, r, _ = queue[0]
                 no, _, _, d = queue[self.n_step]
@@ -209,17 +197,17 @@ class PrioritizedReplayBuffer(BaseBuffer):
 
         return indices, weights, self._get_samples(indices, env)
 
+    def obs_to_torch(self, array, copy=True):
+        array = np.stack([np.array(obs) for obs in array])
+        return super().to_torch(array, copy)
+
     def _get_samples(
         self, batch_inds: np.ndarray, env: Optional[VecNormalize] = None
     ) -> ReplayBufferSamples:
         data = (
-            prep_observation_for_qnet(
-                stack_lazy(self.observations[batch_inds]), self.use_amp
-            ),
+            self.obs_to_torch(self.observations[batch_inds]),
             self.actions[batch_inds, :],
-            prep_observation_for_qnet(
-                stack_lazy(self.next_observations[batch_inds]), self.use_amp
-            ),
+            self.obs_to_torch(self.next_observations[batch_inds]),
             self.dones[batch_inds].reshape(-1, 1),
             self.rewards[batch_inds].reshape(-1, 1),
         )

@@ -5,11 +5,12 @@ Note from the original file:
 This file handles some of the internals for vectorized environments.
 """
 
+from typing import List, Tuple, Dict
+
 from collections import deque
 from copy import deepcopy
 
 from gym.spaces import Box
-from gym.wrappers import LazyFrames
 
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvWrapper
@@ -71,6 +72,57 @@ class SubprocVecEnvNoFlatten(SubprocVecEnv):
         return obs
 
 
+class LazyStackedObservations:
+    def __init__(self, frames, lz4_compress=False, stack_axis=0):
+        self.frame_shape = tuple(frames[0].shape)
+        self.shape = np.repeat(self.frame_shape, len(frames), axis=stack_axis)
+        self.stack_axis = stack_axis
+        self.dtype = frames[0].dtype
+        if lz4_compress:
+            from lz4.block import compress
+
+            frames = [compress(frame) for frame in frames]
+        self._frames = frames
+        self.lz4_compress = lz4_compress
+
+    def __array__(self, dtype=None):
+        arr = self[:]
+        if dtype is not None:
+            return arr.astype(dtype)
+        return arr
+
+    def __len__(self):
+        return self.shape[0]
+
+    def __getitem__(self, int_or_slice):
+        if isinstance(int_or_slice, int):
+            return self._check_decompress(self._frames[int_or_slice])  # single frame
+        return np.concatenate(
+            [self._check_decompress(f) for f in self._frames[int_or_slice]],
+            axis=self.stack_axis,
+        )
+
+    def __eq__(self, other):
+        return self.__array__() == other
+
+    def _check_decompress(self, frame):
+        if self.lz4_compress:
+            from lz4.block import decompress
+
+            return np.frombuffer(decompress(frame), dtype=self.dtype).reshape(
+                self.frame_shape
+            )
+        return frame
+
+
+class LazyVecStackedObservations(list):
+    def __array__(self, dtype=None):
+        arr = np.stack([obs.__array__() for obs in self])
+        if dtype is not None:
+            return arr.astype(dtype)
+        return arr
+
+
 class LazyVecFrameStack(VecEnvWrapper):
     """
     Lazy & vectorized frame stacking implementation based on OpenAI-Baselines FrameStack and Stable-Baselines-3 VecFrameStack wrappers.
@@ -95,33 +147,39 @@ class LazyVecFrameStack(VecEnvWrapper):
         num_stack: int,
         clone_arrays: bool,
         lz4_compress: bool = False,
+        channel_axis: int = -1,
     ):
         super().__init__(venv)
         self.num_stack = num_stack
         self.lz4_compress = lz4_compress
         self.clone_arrays = clone_arrays
+        self.stack_axis = channel_axis
 
         self.frames = [deque(maxlen=num_stack) for _ in range(self.num_envs)]
 
-        low = np.repeat(self.observation_space.low[np.newaxis, ...], num_stack, axis=0)
-        high = np.repeat(
-            self.observation_space.high[np.newaxis, ...], num_stack, axis=0
-        )
+        low = np.repeat(self.observation_space.low, num_stack, axis=channel_axis)
+        high = np.repeat(self.observation_space.high, num_stack, axis=channel_axis)
         self.observation_space = Box(
             low=low, high=high, dtype=self.observation_space.dtype
         )
 
-    def _get_observation(self):
+    def _get_observation(self) -> LazyVecStackedObservations:
         result = []
         for i in range(len(self.frames)):
             assert len(self.frames[i]) == self.num_stack, (
                 len(self.frames[i]),
                 self.num_stack,
             )
-            result.append(LazyFrames(list(self.frames[i]), self.lz4_compress))
-        return result
+            result.append(
+                LazyStackedObservations(
+                    list(self.frames[i]), self.lz4_compress, stack_axis=self.stack_axis
+                )
+            )
+        return LazyVecStackedObservations(result)
 
-    def step_wait(self):
+    def step_wait(
+        self,
+    ) -> Tuple[LazyVecStackedObservations, np.ndarray, np.ndarray, List[Dict]]:
         observations, rewards, dones, infos = self.venv.step_wait()
 
         # Note: copying all the arrays here is necessary to prevent some weird memory leak when using procgen with DummyVecEnv
@@ -135,7 +193,7 @@ class LazyVecFrameStack(VecEnvWrapper):
                 self.frames[i].append(observation)
             return self._get_observation(), rewards, dones, infos
 
-    def reset(self, **kwargs):
+    def reset(self, **kwargs) -> LazyVecStackedObservations:
         observations = self.venv.reset(**kwargs)
 
         for i, observation in enumerate(observations):

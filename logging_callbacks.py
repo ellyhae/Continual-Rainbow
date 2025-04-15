@@ -5,31 +5,8 @@ import os
 
 import numpy as np
 import torch
-from torch import Tensor
 
 from stable_baselines3.common.callbacks import BaseCallback
-
-
-def prep_observation_for_qnet(tensor: Tensor, use_amp: bool) -> Tensor:
-    """Tranfer the tensor the gpu and reshape it into (batch, frame_stack*channels, y, x)"""
-    # assert len(tensor.shape) == 5, tensor.shape # (batch, frame_stack, y, x, channels)
-    if tensor.dim() == 5:
-        tensor = tensor.cuda().permute(
-            0, 1, 4, 2, 3
-        )  # (batch, frame_stack, channels, y, x)
-        # .cuda() needs to be before this ^ so that the tensor is made contiguous on the gpu
-        tensor = tensor.reshape(
-            (tensor.shape[0], tensor.shape[1] * tensor.shape[2], *tensor.shape[3:])
-        )
-
-        return tensor.to(dtype=(torch.float16 if use_amp else torch.float32)) / 255
-    elif tensor.dim() == 3:
-        tensor = tensor.cuda()  # (batch, frame_stack, channels)
-        # .cuda() needs to be before this ^ so that the tensor is made contiguous on the gpu
-        tensor = tensor.reshape((tensor.shape[0], tensor.shape[1] * tensor.shape[2]))
-
-        return tensor.to(dtype=(torch.float16 if use_amp else torch.float32))
-    return tensor.cuda().to(dtype=(torch.float16 if use_amp else torch.float32))
 
 
 class WeightLogger(BaseCallback):

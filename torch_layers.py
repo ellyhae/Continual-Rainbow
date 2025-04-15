@@ -98,6 +98,7 @@ def create_mlp(
     Create a multi layer perceptron (MLP), which is
     a collection of fully-connected layers each followed by an activation function.
     Optionally: use noisy Linear layers instead of normal Linear layers (paper NOISY NETWORKS FOR EXPLORATION)
+
     :param input_dim: Dimension of the input vector
     :param output_dim:
     :param net_arch: Architecture of the neural net
@@ -276,7 +277,7 @@ class ImpalaCNNLarge(BaseFeaturesExtractor):
             torch.nn.Flatten(),
         )
 
-        n_flatten = 64 * 8**2
+        n_flatten = 32 * model_size * 8**2
 
         self.last = nn.Identity()
         if features_dim is not None:
