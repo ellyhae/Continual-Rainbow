@@ -16,11 +16,15 @@ name: ${hydra:runtime.choices.algorithm}_${hydra:runtime.choices.random}
 seed_name: ${hydra:runtime.choices.random}
 
 model_dir: ./
+
+# CBP Logger callback parameters
 cbp_dir: ./cbp
 cbp_log_freq: 100
 
+# enable progressbar during training
 progress_bar: True
 
+# environment specification, primarily used in env_wrappers
 env:
   frame_stack: 4
   subproc_vecenv: True
@@ -57,19 +61,22 @@ algorithm:
     policy_kwargs:
       noisy_linear: False
 
+# CheckpointCallback configuration
 checkpoint_dir: ./checkpoints/
-checkpoint_freq: ???
+checkpoint_freq: ???  # measured in timesteps. needs to be a multiple of env.parallel_envs
 
+# EvalCallback configuration
 eval:
   # eval during training
   evalcallback: True
 
-  eval_freq: ???
+  eval_freq: ???  # measured in timesteps. needs to be a multiple of env.parallel_envs
 
   n_eval_episodes: 10
   dir: ./eval
   best_model_dir: ./
 
+# Weights & Biases configuration
 wandb:
   project: Rainbow
   name: ${name}
@@ -78,4 +85,5 @@ wandb:
   dir: ${hydra:runtime.cwd}/${hydra:sweep.dir}
   monitor_gym: False # auto-upload the videos of agents playing the game
 
-wandb_gradient_save_freq: ???
+# WandbCallback configuration
+wandb_gradient_save_freq: ???   # measured in batches

@@ -282,8 +282,10 @@ class RainbowPolicy(BasePolicy):
 
         if net_arch is None:
             if features_extractor_class == ImpalaCNNLarge:
+                # based on https://github.com/schmidtdominik/Rainbow  networks.py
                 net_arch = [256]
             else:
+                # based on stable baseline 3's DQN
                 net_arch = [64, 64]
 
         self.net_arch = net_arch
