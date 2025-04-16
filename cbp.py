@@ -115,6 +115,8 @@ class CBP(CAdam):
     """
     Continual Backprop extension for the Adam Optimizer
 
+    Paper: http://arxiv.org/abs/2108.06325
+
     Open questions:
         - How should batches be dealt with?
             - For now we calculate the mean over the batch and handle that like in the sequential case
