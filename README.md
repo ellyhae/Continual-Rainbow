@@ -1,6 +1,3 @@
-# TODO write pdf report
-# TODO condense pdf report here
-
 # Continual-Rainbow
  Rainbow algorithm + Continual Backprop, implemented in Stable Baselines 3 - JKU Bachelor Project
 
@@ -19,11 +16,3 @@ For testing pruposes, a command like the following can be used
 ```
 python hydra_launcher.py --multirun algorithm=cbp random=seed1,seed2 wandb.mode=disabled env.parallel_envs=8 env.decorr=False progress_bar=True
 ```
-
-
-# Done files
-
-- vec_envs.py
-- env_wrapper.py
-- retro_utils.py
-- logger.py
