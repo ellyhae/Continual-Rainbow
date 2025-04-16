@@ -15,7 +15,7 @@ from stable_baselines3.common.preprocessing import preprocess_obs
 
 from vec_envs import LazyVecStackedObservations
 from torch_layers import ImpalaCNNLarge, create_mlp, Dueling
-from cbp import CBP, prepare_cbp_kwargs
+from cbp import CBP
 
 
 class RainbowNetwork(BasePolicy):
@@ -185,6 +185,28 @@ class RainbowNetwork(BasePolicy):
         return data
 
 
+def prepare_cbp_kwargs(net: RainbowNetwork) -> Dict[str, List[List[torch.nn.Linear]]]:
+    """Gather the linear layers and activation functions of the network,
+    such that they can be passed to the CBP optimizer.
+
+    Exploits the MLP structure wherein every linear layer is followed by an activation."""
+    linear_layers = [
+        list(net.dueling.value_branch[::2].children()),
+        list(net.dueling.advantage_branch[::2].children()),
+    ]
+    activation_layers = [
+        list(net.dueling.value_branch[1::2].children()),
+        list(net.dueling.advantage_branch[1::2].children()),
+    ]
+
+    for linear_branch, activation_branch in zip(linear_layers, activation_layers):
+        # remove linear output layer without activation
+        if len(linear_branch) == len(activation_branch) + 1:
+            linear_branch.pop(-1)
+
+    return dict(linear_layers=linear_layers, activation_layers=activation_layers)
+
+
 class RainbowPolicy(BasePolicy):
     """Policy class with Q-Value Net and target net for DQN"""
 
@@ -305,9 +327,7 @@ class RainbowPolicy(BasePolicy):
 
         # Continual Backprop optimization needs additional arguments, so a distinction has to be made
         if self.optimizer_class == CBP:
-            optimizer_kwargs = optimizer_kwargs | prepare_cbp_kwargs(
-                self.q_net, self.net_args
-            )
+            optimizer_kwargs = optimizer_kwargs | prepare_cbp_kwargs(self.q_net)
 
         # Setup optimizer with initial learning rate
         self.optimizer = self.optimizer_class(  # type: ignore[call-arg]
