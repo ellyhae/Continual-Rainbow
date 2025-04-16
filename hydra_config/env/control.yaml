@@ -1,26 +1,29 @@
 # @package _global_
 
+# parameters for control environments
+# based on http://arxiv.org/abs/2011.14826
+# but adapted to a longer timescale to see long term stability
+
 env:
   env_name: CartPole-v1
-  parallel_envs: 10
+  parallel_envs: 16
   time_limit: 500
 
 algorithm:
-  training_frames: 50000 #?
+  training_frames: 2_500_000
 
   settings:
     policy: MlpPolicy
 
-    learning_starts: 500
-    buffer_size: 50_000
+    learning_starts: 40_000
+    buffer_size: 262_144
     batch_size: 128
-    target_update_interval: 100
+    target_update_interval: 8_000
     replay_buffer_kwargs:
       beta_final: 0.51
     
     learning_rate: 0.001
 
-    #eps_decay_frames: 30_000  # used to calculate exploration_fraction # hard to determine what number would be appropriate without noisy_linear
     exploration_fraction: 0.6
 
     policy_kwargs:
@@ -28,7 +31,7 @@ algorithm:
       force_normalize_obs: False
 
 eval:
-  eval_freq: 1000
+  eval_freq: 15625
 
-checkpoint_freq: 1000
+checkpoint_freq: 15625
 wandb_gradient_save_freq: 1000
