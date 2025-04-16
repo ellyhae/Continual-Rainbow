@@ -346,7 +346,6 @@ class Rainbow(AsyncOffPolicyAlgorithm):
             if self.prioritized_er:
                 # if PER is being used, the return type is actually a tuple, so split it correctly
                 indices, weights, replay_data = replay_data
-                weights = torch.from_numpy(weights).cuda()
 
             with autocast(enabled=self.use_amp):
                 td_est = torch.gather(
