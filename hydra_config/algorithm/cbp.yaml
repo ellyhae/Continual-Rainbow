@@ -2,5 +2,5 @@ settings:
   policy_kwargs:
     optimizer_class: CBP
     optimizer_kwargs:
-      rho: 1e-5
-      m: 1000
+      replacement_rate: 1e-5
+      maturity_threshold: 1000

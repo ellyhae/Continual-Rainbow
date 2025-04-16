@@ -52,11 +52,33 @@ def _generate_step_function(sample_weights) -> torch.jit.ScriptFunction:
         post_state: Dict[str, torch.Tensor],
         pre_linear: torch.nn.Parameter,
         post_linear: torch.nn.Parameter,
+        # would be nice to bake in these constant values, but torch.jit
+        # cannot capture variables outside this function
         eta: float,
-        m: int,
-        rho: float,
+        maturity_threshold: int,
+        replacement_rate: float,
         eps: float,
     ):
+        """Perform the CBP utility calculation and maybe reset a parameter
+
+        **Note**: It is not clear from the paper how many features are actually replaced every iteration.
+                  Their ``n_l`` and ``rho`` don't seem to work, as ``256 * 10**-4 < 1``, therefore not representing the number of units to replace.
+                  We have therefore chosen to use this ``n_l * rho`` value as a probability of replacing the worst performing feature.
+
+        Args:
+            cbp_vals (Dict[str, torch.Tensor]): dictionary containing ``age``, ``h``, ``f`` and ``u``
+                values from the paper for a single layer
+            pre_state (Dict[str, torch.Tensor]): Adam optimizer state of the ingoing weight matrix
+            post_state (Dict[str, torch.Tensor]): Adam optimizer state of the outgoing weight matrix
+            pre_linear (torch.nn.Parameter): ingoing weight matrix
+            post_linear (torch.nn.Parameter): outgoing weight matrix
+            eta (float, optional): running average discount factor.
+            maturity_threshold (int, optional): only features with ``age > maturity_threshold`` are elligible to be replaced.
+                Called ``m`` in the paper.
+            replacement_rate (float, optional): controls how frequently features are replaced.
+                Called ``rho`` in the paper.
+            eps (float, optional): small additive value to avoid division by zero.
+        """
         # calculate the magnitudes of incoming and outgoing weights
         pre_w = pre_linear.detach().abs().sum(1)
         post_w = post_linear.detach().abs().sum(0)
@@ -74,10 +96,10 @@ def _generate_step_function(sample_weights) -> torch.jit.ScriptFunction:
         uhat = cbp_vals["u"] / (1 - eta ** cbp_vals["age"])
 
         # find all units that are older than the minimum age
-        eligible = cbp_vals["age"] > m
+        eligible = cbp_vals["age"] > maturity_threshold
 
         # use n_l* rho as a probability of replacing a single feature
-        if eligible.any() and torch.rand(1) < len(uhat) * rho:
+        if eligible.any() and torch.rand(1) < len(uhat) * replacement_rate:
             # sort eligible indices according to their utility
             ascending = uhat.argsort()
             r = ascending[eligible[ascending]]
@@ -130,8 +152,8 @@ class CBP(CAdam):
         linear_layers: List[List[torch.nn.Linear]],
         activation_layers: List[List[torch.nn.Module]],
         eta: float = 0.99,
-        m: int = int(5e3),
-        rho: float = 10**-4,
+        maturity_threshold: int = int(5e3),
+        replacement_rate: float = 10**-4,
         sample_weights: Callable = linear_sample_weights,
         eps: float = 1e-8,
         device: torch.device | str = "auto",
@@ -146,8 +168,10 @@ class CBP(CAdam):
                 for each separate network (policy, value, ...), in the order they are executed.
                 Forward hooks are added to these
             eta (float, optional): running average discount factor. Defaults to 0.99.
-            m (int, optional): maturity threshold, only features with ``age > m`` are elligible to be replaced. Defaults to int(5e3).
-            rho (float, optional): replacement rate, controls how frequently features are replaced. Defaults to 10**-4.
+            maturity_threshold (int, optional): only features with ``age > maturity_threshold`` are elligible to be replaced.
+                Called ``m`` in the paper. Defaults to int(5e3).
+            replacement_rate (float, optional): controls how frequently features are replaced.
+                Called ``rho`` in the paper. Defaults to 10**-4.
             sample_weights (Callable, optional): functiion that takes a size and a device as input
                 and returna a tensor of the given size with newly initialized weights.
                 Defaults to linear_sample_weights.
@@ -162,8 +186,8 @@ class CBP(CAdam):
         self.cbp_vals = {}
 
         self.eta = eta
-        self.m = m
-        self.rho = rho
+        self.maturity_threshold = maturity_threshold
+        self.replacement_rate = replacement_rate
 
         self.dev = get_device(device)
 
@@ -203,8 +227,8 @@ class CBP(CAdam):
                     current_linear.weight,
                     next_linear.weight,
                     self.eta,
-                    self.m,
-                    self.rho,
+                    self.maturity_threshold,
+                    self.replacement_rate,
                     self.eps,
                 )
 

@@ -1,5 +1,3 @@
-#TODO specify the Hydra config setup and all individual parameters
-
 defaults:
   - _self_
   - env: control
@@ -30,6 +28,7 @@ env:
   decorr: True
   seed: ${random.seed}
 
+# algorithm parameters are documented in rainow.py
 algorithm:
   training_frames: ???
 
@@ -54,9 +53,9 @@ algorithm:
 
     exploration_fraction: ???
 
+    # policy parameters are documented in policy.py
     policy_kwargs:
       noisy_linear: False
-      linear_kwargs: {}
 
 checkpoint_dir: ./checkpoints/
 checkpoint_freq: ???
