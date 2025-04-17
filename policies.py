@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Type, Tuple, Literal
+from functools import partial
 
 import torch as torch
 from torch import nn
@@ -12,9 +13,10 @@ from stable_baselines3.common.torch_layers import (
 )
 from stable_baselines3.common.type_aliases import Schedule
 from stable_baselines3.common.preprocessing import preprocess_obs
+from stable_baselines3.common.torch_layers import create_mlp
 
 from vec_envs import LazyVecStackedObservations
-from torch_layers import ImpalaCNNLarge, create_mlp, Dueling
+from torch_layers import ImpalaCNNLarge, Dueling, FactorizedNoisyLinear
 from cbp import CBP
 
 
@@ -73,25 +75,28 @@ class RainbowNetwork(BasePolicy):
         action_dim = int(self.action_space.n)  # number of actions
         self.noisy_linear = noisy_linear
         self.linear_kwargs = linear_kwargs
+
+        # set up linear layer with pre-applied kwargs
+        layer_type = FactorizedNoisyLinear if self.noisy_linear else torch.nn.Linear
+        layer_fn = partial(layer_type, **self.linear_kwargs)
+
         self.dueling = Dueling(
             nn.Sequential(
                 *create_mlp(
-                    self.features_dim,
-                    1,
-                    self.net_arch,
-                    self.activation_fn,
-                    self.noisy_linear,
-                    self.linear_kwargs,
+                    input_dim=self.features_dim,
+                    output_dim=1,
+                    net_arch=self.net_arch,
+                    activation_fn=self.activation_fn,
+                    layer_fn=layer_fn,
                 )
             ),
             nn.Sequential(
                 *create_mlp(
-                    self.features_dim,
-                    action_dim,
-                    self.net_arch,
-                    self.activation_fn,
-                    self.noisy_linear,
-                    self.linear_kwargs,
+                    input_dim=self.features_dim,
+                    output_dim=action_dim,
+                    net_arch=self.net_arch,
+                    activation_fn=self.activation_fn,
+                    layer_fn=layer_fn,
                 )
             ),
         )

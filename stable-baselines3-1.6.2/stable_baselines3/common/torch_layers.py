@@ -99,6 +99,7 @@ def create_mlp(
     net_arch: List[int],
     activation_fn: Type[nn.Module] = nn.ReLU,
     squash_output: bool = False,
+    layer_fn: Type[nn.Module] = nn.Linear
 ) -> List[nn.Module]:
     """
     Create a multi layer perceptron (MLP), which is
@@ -113,21 +114,22 @@ def create_mlp(
         to use after each layer.
     :param squash_output: Whether to squash the output using a Tanh
         activation function
+    :param linear_fn: The module used for each layer
     :return:
     """
 
     if len(net_arch) > 0:
-        modules = [nn.Linear(input_dim, net_arch[0]), activation_fn()]
+        modules = [layer_fn(input_dim, net_arch[0]), activation_fn()]
     else:
         modules = []
 
     for idx in range(len(net_arch) - 1):
-        modules.append(nn.Linear(net_arch[idx], net_arch[idx + 1]))
+        modules.append(layer_fn(net_arch[idx], net_arch[idx + 1]))
         modules.append(activation_fn())
 
     if output_dim > 0:
         last_layer_dim = net_arch[-1] if len(net_arch) > 0 else input_dim
-        modules.append(nn.Linear(last_layer_dim, output_dim))
+        modules.append(layer_fn(last_layer_dim, output_dim))
     if squash_output:
         modules.append(nn.Tanh())
     return modules

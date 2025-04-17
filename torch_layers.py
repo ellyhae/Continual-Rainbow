@@ -79,57 +79,6 @@ class FactorizedNoisyLinear(nn.Module):
         return F.linear(input, self.weight, self.bias)
 
 
-# adapted from stable_baselines3/common/torch_layers.py
-def create_mlp(
-    input_dim: int,
-    output_dim: int,
-    net_arch: List[int],
-    activation_fn: Type[nn.Module] = nn.ReLU,
-    noisy_linear: bool = False,
-    linear_kwargs: Dict[str, Any] = {},
-    squash_output: bool = False,
-) -> List[nn.Module]:
-    """
-    Create a multi layer perceptron (MLP), which is
-    a collection of fully-connected layers each followed by an activation function.
-    Optionally: use noisy Linear layers instead of normal Linear layers (paper NOISY NETWORKS FOR EXPLORATION)
-
-    :param input_dim: Dimension of the input vector
-    :param output_dim: Dimension of the output vector
-    :param net_arch: Architecture of the neural net
-        It represents the number of units per layer.
-        The length of this list is the number of layers.
-    :param activation_fn: The activation function
-        to use after each layer.
-    :param noisy_linear: If set to True, noisy Linear layers will be used instead of normal Linear layers
-    :param linear_kwargs: Keyword arguments for the linear layers
-    :param squash_output: Whether to squash the output using a Tanh
-        activation function
-    :return: The specified MLP
-    """
-
-    linear_layer = nn.Linear if not noisy_linear else FactorizedNoisyLinear
-
-    if len(net_arch) > 0:
-        modules = [
-            linear_layer(input_dim, net_arch[0], **linear_kwargs),
-            activation_fn(),
-        ]
-    else:
-        modules = []
-
-    for idx in range(len(net_arch) - 1):
-        modules.append(linear_layer(net_arch[idx], net_arch[idx + 1], **linear_kwargs))
-        modules.append(activation_fn())
-
-    if output_dim > 0:
-        last_layer_dim = net_arch[-1] if len(net_arch) > 0 else input_dim
-        modules.append(linear_layer(last_layer_dim, output_dim, **linear_kwargs))
-    if squash_output:
-        modules.append(nn.Tanh())
-    return modules
-
-
 # adapted from Rainbow/common/networks.py
 class Dueling(nn.Module):
     """Dueling Network for Q-value estimation, wherein the computation is split into an
